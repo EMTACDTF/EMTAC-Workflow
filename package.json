@@ -1,6 +1,6 @@
 {
   "name": "emtac-workflow",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Simple Stable EMTAC Offline App",
   "main": "main.js",
   "scripts": {
@@ -34,7 +34,8 @@
       {
         "provider": "github",
         "owner": "EMTACDTF",
-        "repo": "EMTAC-Workflow"
+        "repo": "EMTAC-Workflow",
+        "releaseType": "release"
       }
     ]
   }
