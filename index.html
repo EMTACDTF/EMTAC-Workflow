@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>EMTAC WORKFLOW</title>
+  <title>EMTAC Simple</title>
   <style>
     :root{
       --bg: #f6f7fb;
@@ -365,6 +365,11 @@
 </head>
 <body>
   <div class="topbar">
+      <div class="brand" id="brandHome" onclick="brandHome()">
+        <div class="brandIcon" aria-hidden="true">E</div>
+        <div class="brandTitle">EMTAC WORKFLOW</div>
+      </div>
+
     <div class="topbarInner">
       <div class="brand">
         <div class="logo"></div>
@@ -376,7 +381,8 @@
       <div class="actions">
         <button class="btn" onclick="toggleTheme()">🌗 Dark mode</button>
         <button class="btn" id="btnArchive" onclick="toggleArchive()">🗄️ Archive</button>
-          <button class="btn" id="btnSettings" onclick="openSettings()">⚙️ Settings</button>
+          <button class="btn" id="btnCheckUpdates" onclick="manualCheckUpdates()" title="Check for updates">⬇️ Update</button>
+      <button class="btnSmall" id="btnSettings" onclick="openSettings()">⚙️ Settings</button>
           <button class="btn" id="btnCustomer" onclick="toggleCustomerMode()">👤 Customer</button>
         <button class="btn" id="btnJobs" onclick="showJobs()">📋 Jobs</button>
         <button class="btn btnPrimary" onclick="exportPdf()">Export PDF</button>
@@ -2035,7 +2041,37 @@ document.getElementById('dueDate').value = '';
       renderAll();
     }
 
-    // init
+    function brandHome(){
+      // Home action: go to Customer view (capture mode)
+      customerMode = true;
+      document.getElementById('btnCustomer')?.classList.add('active');
+      document.body.classList.remove('jobsOnly');
+      document.body.classList.remove('formCollapsed');
+      applyCustomerModeUI();
+    }
+
+    
+// --- Updates UI ---
+function manualCheckUpdates(){
+  try{
+    window.api.checkForUpdates().then(r=>{
+      if (!r || !r.success) alert('Update check failed: ' + (r?.error || 'unknown'));
+      else alert('Checking for updates…');
+    });
+  }catch(e){
+    alert('Update check failed: ' + e);
+  }
+}
+
+(function(){
+  try{
+    window.api.onUpdateStatus((s)=>{
+      console.log('[Update]', s);
+    });
+  }catch(e){}
+})();
+
+// init
     applyThemeFromStorage();
     (async ()=>{
       try{

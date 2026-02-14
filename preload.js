@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld('api', {
 
   // Printer
   printJobCardToPrinter: (payload) => ipcRenderer.invoke('print-job-card', payload),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, data) => cb(data))
 });

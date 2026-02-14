@@ -1,4 +1,11 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const log = require('electron-log');
+const { autoUpdater } = require('electron-updater');
+
+autoUpdater.logger = log;
+autoUpdater.logger.transports.file.level = 'info';
+autoUpdater.autoDownload = true;
+
 const path = require('path');
 const fs = require('fs');
 
@@ -114,6 +121,7 @@ function validateJob(job) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
+    title: 'EMTAC WORKFLOW',
     width: 1300,
     height: 860,
     webPreferences: {
@@ -124,6 +132,120 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+}
+
+app.setName('EMTAC WORKFLOW');
+// --- Auto Updates (GitHub Releases) ---
+function setupAutoUpdates(mainWindow){
+  try{
+    autoUpdater.on('error', (err) => {
+      log.error('AutoUpdater error:', err);
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('update-status', { state:'error', message:String(err) });
+      }
+    });
+
+    autoUpdater.on('checking-for-update', () => {
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('update-status', { state:'checking' });
+      }
+    });
+
+    autoUpdater.on('update-available', (info) => {
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('update-status', { state:'available', info });
+      }
+    });
+
+    autoUpdater.on('update-not-available', (info) => {
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('update-status', { state:'none', info });
+      }
+    });
+
+    autoUpdater.on('download-progress', (p) => {
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('update-status', { state:'downloading', progress:p });
+      }
+    });
+
+    autoUpdater.on('update-downloaded', async (info) => {
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('update-status', { state:'downloaded', info });
+      }
+      const res = await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Update ready',
+        message: 'A new version of EMTAC WORKFLOW has been downloaded.',
+        detail: 'Restart the app to install the update.'
+      });
+      if (res.response === 0){
+        autoUpdater.quitAndInstall();
+      }
+    });
+
+    // Check on startup
+    autoUpdater.checkForUpdatesAndNotify();
+  }catch(e){
+    log.error('setupAutoUpdates failed', e);
+  }
+}
+
+ipcMain.handle('check-for-updates', async () => {
+  try{
+    await autoUpdater.checkForUpdates();
+    return { success:true };
+  }catch(e){
+    return { success:false, error:String(e) };
+  }
+});
+
+// --- App Menu (Help) ---
+function setupAppMenu(mainWindow){
+  const template = [
+    ...(process.platform === 'darwin' ? [{
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }] : []),
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+    {
+      label: 'Help',
+      submenu: [
+        { label: `Version: ${app.getVersion()}`, enabled: false },
+        { type: 'separator' },
+        {
+          label: 'Check for Updates…',
+          click: async () => {
+            try{
+              await autoUpdater.checkForUpdates();
+            }catch(e){
+              log.error('Manual update check failed', e);
+              try{
+                dialog.showMessageBox(mainWindow, {
+                  type:'error',
+                  title:'Update check failed',
+                  message:'Could not check for updates.',
+                  detail:String(e)
+                });
+              }catch(_e){}
+            }
+          }
+        }
+      ]
+    }
+  ];
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
 }
 
 app.whenReady().then(() => {
