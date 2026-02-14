@@ -1,0 +1,2062 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>EMTAC WORKFLOW</title>
+  <style>
+    :root{
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --shadow: 0 6px 22px rgba(0,0,0,.06);
+      --pill: #f3f4f6;
+      --btn: #111827;
+      --btnText: #ffffff;
+      --danger: #dc2626;
+      --warning: #b45309;
+      --ok: #059669;
+          --info: #2563eb;
+      --purple: #7c3aed;
+    }
+    [data-theme="dark"]{
+      --bg: #0b1220;
+      --panel: #111a2b;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --border: #22304a;
+      --shadow: 0 10px 30px rgba(0,0,0,.40);
+      --pill: #16243a;
+      --btn: #e5e7eb;
+      --btnText: #0b1220;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      --ok: #34d399;
+          --info: #60a5fa;
+      --purple: #a78bfa;
+    }
+
+    *{ box-sizing: border-box; }
+    body{
+      margin:0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap{ max-width: 1280px; margin: 0 auto; padding: 18px; }
+
+    /* Header */
+    .topbar{
+      position: sticky; top:0;
+      background: color-mix(in srgb, var(--bg) 92%, transparent);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      z-index: 10;
+    }
+    .topbarInner{
+      max-width: 1280px; margin:0 auto; padding: 14px 18px;
+      display:flex; gap:12px; align-items:center; justify-content: space-between;
+    }
+    .brand{
+      display:flex; gap:10px; align-items:center;
+    }
+    .logo{
+      width: 38px; height:38px; border-radius: 12px;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      box-shadow: var(--shadow);
+    }
+    .brand h1{ margin:0; font-size: 16px; line-height: 1.1; }
+    .brand .sub{ font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .actions{ display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+    .btn{
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 8px 12px;
+      cursor: pointer;
+      box-shadow: none;
+    }
+    .btnPrimary{
+      background: var(--btn);
+      color: var(--btnText);
+      border-color: transparent;
+    }
+    .btn:active{ transform: translateY(1px); }
+    .btn.active{ background: var(--btn); color: var(--btnText); border-color: transparent; }
+
+    /* Layout */
+    .grid{
+      display:flex;
+      flex-direction:row;
+      align-items:flex-start;
+      gap:16px;
+    }
+    .grid > .panel:first-child{
+      flex:0 0 420px;
+      max-width:420px;
+    }
+    .grid > .panel:last-child{
+      flex:1;
+      min-width:0;
+    }
+    
+
+    /* Cards / panels */
+    .panel{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+    .panelTitle{
+      display:flex; justify-content: space-between; align-items:center; gap:10px;
+      margin-bottom: 10px;
+    }
+    .panelTitle h2{
+      margin:0; font-size: 14px;
+    }
+    .muted{ color: var(--muted); font-size: 12px; }
+
+    /* Dashboard */
+    .dash{
+      display:grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+    @media (max-width: 1100px){
+      .dash{ grid-template-columns: repeat(2, 1fr); }
+    }
+    .stat{
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .stat .k{ font-size: 12px; color: var(--muted); }
+    .stat .v{ font-size: 20px; font-weight: 700; margin-top: 6px; }
+    .stat .hint{ font-size: 12px; margin-top: 6px; color: var(--muted); }
+
+    /* Form */
+    label{ display:block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+    input, select, textarea{
+      width:100%;
+      padding: 10px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      outline: none;
+    }
+    textarea{ min-height: 80px; resize: vertical; }
+    .row2{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row3{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .rowInline{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+
+    .chip{
+      display:inline-flex; align-items:center; gap:6px;
+      padding: 3px 10px;
+      background: var(--pill);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .chip.phase-captured{ border-color: color-mix(in srgb, var(--info) 35%, var(--border)); background: color-mix(in srgb, var(--info) 12%, var(--pill)); color: var(--text); font-weight: 800; }
+    .chip.phase-art{ border-color: color-mix(in srgb, var(--purple) 35%, var(--border)); background: color-mix(in srgb, var(--purple) 12%, var(--pill)); color: var(--text); font-weight: 800; }
+    .chip.phase-pay{ border-color: color-mix(in srgb, var(--warning) 35%, var(--border)); background: color-mix(in srgb, var(--warning) 12%, var(--pill)); color: var(--text); font-weight: 800; }
+    .chip.phase-prod{ border-color: color-mix(in srgb, var(--info) 55%, var(--border)); background: color-mix(in srgb, var(--info) 18%, var(--pill)); color: var(--text); font-weight: 900; }
+    .chip.phase-qc{ border-color: color-mix(in srgb, var(--warning) 55%, var(--border)); background: color-mix(in srgb, var(--warning) 18%, var(--pill)); color: var(--text); font-weight: 900; }
+    .chip.phase-ready{ border-color: color-mix(in srgb, var(--purple) 55%, var(--border)); background: color-mix(in srgb, var(--purple) 18%, var(--pill)); color: var(--text); font-weight: 900; }
+    .chip.phase-done{ border-color: color-mix(in srgb, var(--ok) 55%, var(--border)); background: color-mix(in srgb, var(--ok) 16%, var(--pill)); color: var(--text); font-weight: 900; }
+
+    .jobHeader{ cursor: pointer; user-select:none; }
+    .jobCard.collapsed .jobDetails{ display:none; }
+    .jobDetails{ margin-top:10px; }
+    .stickyUrgent{
+      position: sticky;
+      top: 86px;
+      z-index: 8;
+      padding: 10px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      box-shadow: var(--shadow);
+      margin-top: 10px;
+    }
+    .stickyUrgent h4{ margin:0 0 8px 0; font-size: 12px; letter-spacing:.2px; }
+    .urgentGrid{ display:flex; flex-direction:column; gap:10px; }
+    .chip.red{ color: var(--danger); font-weight: 800; }
+    .chip.orange{ color: var(--warning); font-weight: 800; }
+    .chip.green{ color: var(--ok); font-weight: 800; }
+
+    /* View controls */
+    .viewTabs{ display:flex; gap:10px; flex-wrap:wrap; }
+    .tab{ border-radius: 999px; padding: 8px 12px; border: 1px solid var(--border); background: var(--panel); cursor:pointer; }
+    .tab.active{ background: var(--btn); color: var(--btnText); border-color: transparent; }
+
+    .searchRow{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top: 10px; }
+    .searchRow input{ flex: 1; min-width: 240px; }
+    .searchRow select{ width: 180px; }
+
+    /* List view */
+    .list{ margin-top: 12px; display:flex; flex-direction: column; gap: 10px; }
+    .jobCard{
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+    .jobTop{
+      display:flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+      align-items:flex-start;
+    }
+    .jobTitle{
+      font-weight: 800;
+      margin:0;
+      font-size: 14px;
+    }
+    .jobMeta{ margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .jobBtns{ display:flex; gap:8px; flex-wrap: wrap; }
+    .btnSmall{ padding: 7px 10px; border-radius: 12px; font-size: 12px; }
+
+    /* Board */
+    .board{
+      margin-top: 12px;
+      display:grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 1100px){
+      .board{ grid-template-columns: repeat(2, 1fr); }
+    }
+    .col{
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel) 92%, transparent);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 10px;
+      min-height: 120px;
+    }
+    .colHeader{
+      display:flex; justify-content: space-between; align-items:center;
+      gap:10px; margin-bottom: 8px;
+      font-size: 12px; color: var(--muted);
+    }
+    .dropZone{
+      display:flex; flex-direction: column; gap: 8px;
+      min-height: 80px;
+    }
+    .tile{
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel);
+      padding: 10px;
+      cursor: grab;
+    }
+    .tile:active{ cursor: grabbing; }
+    .tileTitle{ font-weight: 800; font-size: 12px; margin:0; }
+    .tileSub{ font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+    /* Overlay Job Card */
+    .overlay{
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.35);
+      display:none;
+      align-items:center; justify-content:center;
+      padding: 20px;
+      z-index: 50;
+    }
+    .modal{
+      width: min(980px, 96vw);
+      max-height: 90vh;
+      overflow:auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+    }
+    .modalHeader{
+      display:flex; justify-content: space-between; align-items:center; gap:10px; flex-wrap:wrap;
+      margin-bottom: 10px;
+    }
+    .modalHeader h3{ margin:0; font-size: 16px; }
+    .checkItem{ display:flex; align-items:center; gap:10px; margin: 8px 0; }
+    .checkItem input{ width:auto; }
+  
+    
+
+    body.customerMode #dash{ display:none !important; }
+    body.customerMode .grid > .panel:last-child{ display:none !important; }
+    body.customerMode #btnArchive,
+    body.customerMode #btnSettings,
+    body.customerMode #btnPdf_REMOVED{
+      display:none !important;
+    }
+    
+    .rightControls{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px; }
+    .rightControls .chipRow{ margin-top:0 !important; }
+    .rightControls .searchRow{ margin-top:0 !important; flex:1; min-width:280px; justify-content:flex-end; }
+    .rightControls .searchRow input{ flex:1; min-width:220px; }
+    .rightControls .searchRow select{ min-width:180px; }
+    
+    html, body{ height:100%; }
+    .wrap{ min-height:100vh; display:flex; flex-direction:column; }
+    .grid{ flex:1; }
+
+    /* Collapsible left panel */
+    body.formCollapsed .grid > .panel:first-child{
+      flex:0 0 54px !important;
+      max-width:54px !important;
+      overflow:hidden;
+      padding:10px !important;
+    }
+    body.formCollapsed #formPanel label,
+    body.formCollapsed #formPanel input,
+    body.formCollapsed #formPanel select,
+    body.formCollapsed #formPanel textarea,
+    body.formCollapsed #formPanel .row2,
+    body.formCollapsed #formPanel .rowInline,
+    body.formCollapsed #formPanel .formActions,
+    body.formCollapsed #formPanel #editHint{
+      display:none !important;
+    }
+    body.formCollapsed #formPanel .panelTitle{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+    }
+    body.formCollapsed #formPanel .panelTitle h2{ font-size:12px; margin:0; }
+    body.formCollapsed #btnCollapseForm{ width:100%; }
+
+    /* Right panel full height with scrolling list */
+    .grid > .panel:last-child{ display:flex; flex-direction:column; height:calc(100vh - 160px); }
+    .rightTop{ position:sticky; top:0; background:var(--card); z-index:5; padding-bottom:10px; }
+    .views{ flex:1; overflow:auto; }
+    
+    /* Jobs-only mode: hide the left form panel */
+    body.jobsOnly .grid > .panel:first-child{ display:none !important; }
+
+    /* Customer mode polish (tablet) */
+    body.customerMode #saveNewBtn,
+    body.customerMode #autoPrintWrap{ display:inline-flex !important; }
+    body.customerMode #cancelEditBtn{ display:none !important; }
+    body.customerMode .rightTop,
+    body.customerMode .views{ display:none !important; }
+    body.customerMode .panel{ border-width:2px; }
+    body.customerMode label{ font-size:16px; }
+    body.customerMode input, body.customerMode select, body.customerMode textarea{
+      font-size:18px;
+      padding:14px 14px;
+      border-radius:12px;
+    }
+    body.customerMode textarea{ min-height:120px; }
+    body.customerMode .btn{ padding:14px 16px; font-size:16px; }
+    body.customerMode .chip{ font-size:14px; }
+    </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbarInner">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>EMTAC Job Cards</h1>
+          <div class="sub">Stable build · DTF + Embroidery</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" onclick="toggleTheme()">🌗 Dark mode</button>
+        <button class="btn" id="btnArchive" onclick="toggleArchive()">🗄️ Archive</button>
+          <button class="btn" id="btnSettings" onclick="openSettings()">⚙️ Settings</button>
+          <button class="btn" id="btnCustomer" onclick="toggleCustomerMode()">👤 Customer</button>
+        <button class="btn" id="btnJobs" onclick="showJobs()">📋 Jobs</button>
+        <button class="btn btnPrimary" onclick="exportPdf()">Export PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div id="statusBanner" class="panel" style="display:none; border-color: var(--warning);">
+      <div class="panelTitle"><h2 id="statusBannerTitle">Status</h2><span class="muted" id="statusBannerSub"></span></div>
+      <div id="statusBannerText" class="muted" style="white-space:pre-wrap;"></div>
+      <div class="rowInline" style="margin-top:10px;">
+        <button class="btn btnSmall" onclick="showDbInfo()">Show DB Info</button>
+        <button class="btn btnSmall" onclick="hideStatus()">Hide</button>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="dash" id="dash"></div>
+
+    <div class="grid">
+      <!-- Left: Form + settings -->
+      <div class="panel" id="formPanel">
+        <div class="panelTitle">
+          <div>
+            <h2>Add / Edit Job</h2>
+            <span class="muted" id="editHint">New Job</span>
+          </div>
+          <button class="btn btnSmall" id="btnCollapseForm" onclick="toggleFormCollapse()">⇔ Collapse</button>
+        </div>
+
+        <label>Job Type</label>
+        <select id="jobType" onchange="renderTypeFields()">
+          <option value="DTF">DTF</option>
+          <option value="Embroidery">Embroidery</option>
+        </select>
+
+        <div class="row2">
+          <div>
+            <label>Customer Name</label>
+            <input id="customerName" placeholder="Customer Name">
+          </div>
+          <div>
+            <label>Customer Phone</label>
+            <input id="customerPhone" placeholder="e.g. 082...">
+          </div>
+        </div>
+
+        <label>Customer Email</label>
+        <input id="customerEmail" placeholder="optional@email.com">
+
+        <label>Description</label>
+        <input id="description" placeholder="Description">
+
+        <div class="row3">
+          <div>
+            <label>Due Date</label>
+            <input id="dueDate" type="date">
+          </div>
+          <div>
+            <label>Priority</label>
+            <select id="priority">
+              <option value="Normal">Normal</option>
+              <option value="Low">Low</option>
+              <option value="High">High</option>
+              <option value="Urgent">Urgent</option>
+            </select>
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="statusSelect"></select>
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label>Quantity</label>
+            <input id="quantity" type="number" placeholder="Qty">
+          </div>
+          <div>
+</div>
+        </div>
+
+        <!-- DTF -->
+        <div id="dtfSection" class="panel" style="margin-top:12px; display:none;">
+          <div class="panelTitle"><h2>DTF Details</h2><span class="muted">example fields</span></div>
+          <div class="row2">
+            <div>
+              <label>Size</label>
+              <input id="dtf_size" placeholder="A4 / A3 / Custom">
+            </div>
+            <div>
+              <label>Film Length (m)</label>
+              <input id="dtf_filmLength" type="number" placeholder="e.g. 2">
+            </div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>Colour Count</label>
+              <input id="dtf_colourCount" type="number" placeholder="e.g. 4">
+            </div>
+            <div>
+              <label>Material</label>
+              <input id="dtf_material" placeholder="Cotton / Poly / Mixed">
+            </div>
+          </div>
+          <div class="rowInline" style="margin-top:10px;">
+            <label class="chip"><input id="dtf_press" type="checkbox"> Press required</label>
+            <label class="chip"><input id="dtf_cutLines" type="checkbox"> Cut lines</label>
+          </div>
+        </div>
+
+        <!-- Embroidery -->
+        <div id="embSection" class="panel" style="margin-top:12px; display:none;">
+          <div class="panelTitle"><h2>Embroidery Details</h2><span class="muted">example fields</span></div>
+          <div class="row2">
+            <div>
+              <label>Stitch Count</label>
+              <input id="emb_stitchCount" type="number" placeholder="e.g. 12000">
+            </div>
+            <div>
+              <label>Thread Colours</label>
+              <input id="emb_threadColors" type="number" placeholder="e.g. 3">
+            </div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>Position</label>
+              <input id="emb_position" placeholder="Left chest / Back / Sleeve">
+            </div>
+            <div>
+              <label>Backing</label>
+              <input id="emb_backing" placeholder="Tear away / Cut away">
+            </div>
+          </div>
+          <div class="rowInline" style="margin-top:10px;">
+            <label class="chip"><input id="emb_applique" type="checkbox"> Appliqué</label>
+          </div>
+        </div>
+
+        <div class="rowInline" style="margin-top:12px;">
+          <button class="btn btnPrimary" id="saveBtn" onclick="saveJob()">Add Job</button>
+        <button class="btn btnPrimary" id="saveNewBtn" onclick="saveJob(true)" style="display:none;">✅ Save & New</button>
+          <button class="btn" id="cancelEditBtn" onclick="cancelEdit()" style="display:none;">Cancel Edit</button>
+        <label class="chip" id="autoPrintWrap" style="display:none; margin-left:10px;"><input type="checkbox" id="autoPrintAfterSave"> Auto print</label>
+        </div>
+        <!-- Sync Settings moved to Settings modal -->
+        <input id="serverIp" style="display:none;" placeholder="Server IP">
+</div>
+
+      <!-- Right: Views -->
+      <div class="panel">
+        <div class="rightTop">
+        <div class="panelTitle">
+          <h2>Jobs</h2>
+          <span class="muted" id="viewCount"></span>
+        </div>
+
+        <div class="viewTabs">
+          <button class="tab active" id="tabList" onclick="setView('list')">List</button>
+          <button class="tab" id="tabBoard" onclick="setView('board')">Board</button>
+</div>
+        <div class="rightControls">
+
+
+        <div class="chipRow" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+          <button class="btn btnSmall chip" id="chipActive" onclick="setStatusFilter('active')">Active</button>
+          <button class="btn btnSmall chip" id="chipCompleted" onclick="setStatusFilter('completed')">Completed</button>
+          <button class="btn btnSmall chip" id="chipArchived" onclick="setStatusFilter('archived')">Archived</button>
+          <button class="btn btnSmall chip" id="chipAll" onclick="setStatusFilter('all')">All</button>
+        </div>
+
+        <div class="searchRow">
+          <input id="searchInput" placeholder="Search jobs…" oninput="renderAll()">
+          <select id="sortSelect" onchange="onSortChange(this.value)">
+            <option value="smart">Sort: Smart</option>
+            <option value="newest">Sort: Newest</option>
+            <option value="oldest">Sort: Oldest</option>
+            <option value="updated">Sort: Recently updated</option>
+            <option value="customer">Sort: Customer A→Z</option>
+          </select>
+          <select id="typeFilter" onchange="renderAll()">
+            <option value="ALL">All Types</option>
+            <option value="DTF">DTF</option>
+            <option value="Embroidery">Embroidery</option>
+          </select>
+          <select id="priorityFilter" onchange="renderAll()">
+            <option value="ALL">All Priorities</option>
+            <option value="Urgent">Urgent</option>
+            <option value="High">High</option>
+            <option value="Normal">Normal</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+        </div>
+
+        </div>
+        <div class="views">
+          <div id="listView" class="list"></div>
+          <div id="boardView" style="display:none;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Job Card Overlay -->
+  <div id="overlay" class="overlay" onclick="overlayClick(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modalHeader">
+        <h3 id="cardTitle">Job Card</h3>
+        <div class="rowInline">
+          <button class="btn btnSmall" onclick="printJobCardPdf()">Job Card PDF</button>
+          <button class="btn btnSmall" onclick="printJobCardToPrinter()">Print to Printer</button>
+          <button class="btn btnSmall" onclick="closeCard()">Close</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle"><h2>Customer</h2></div>
+        <div class="muted" id="cardCustomer"></div>
+      </div>
+
+      <div class="panel" style="margin-top:10px;">
+        <div class="panelTitle"><h2>Summary</h2></div>
+        <div class="muted" id="cardSummary"></div>
+        <div class="rowInline" style="margin-top:8px;">
+          <span class="chip" id="cardDuePrio"></span>
+          <span id="cardDueBadge"></span>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:10px;">
+        <div class="panelTitle"><h2>Status</h2></div>
+        <div class="rowInline">
+          <select id="cardStatusSelect" style="max-width:520px;"></select>
+          <button class="btn btnSmall btnPrimary" onclick="saveCardStatus()">Save Status</button>
+        </div>
+        <div class="muted" style="margin-top:8px;">Tip: ticking checklist items will push status forward.</div>
+      </div>
+
+      <div class="panel" style="margin-top:10px;">
+        <div class="panelTitle"><h2>Checklist</h2></div>
+        <div id="checklist"></div>
+      </div>
+
+      <div class="panel" style="margin-top:10px;">
+        <div class="panelTitle"><h2>Status History</h2></div>
+        <div id="history"></div>
+      </div>
+
+      <div class="panel" style="margin-top:10px;">
+        <div class="panelTitle"><h2>Notes</h2></div>
+        <textarea id="cardNotes" placeholder="Notes for production..."></textarea>
+        <button class="btn btnSmall" style="margin-top:10px;" onclick="saveNotes()">Save Notes</button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- Settings Overlay -->
+  <div id="settingsOverlay" class="overlay" style="display:none;" onclick="if(event.target.id==='settingsOverlay') closeSettings()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modalHeader">
+        <h3>Settings</h3>
+        <div class="rowInline">
+          <button class="btn btnSmall btnPrimary" onclick="saveSettingsFromModal()">Save</button>
+          <button class="btn btnSmall" onclick="closeSettings()">Close</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelTitle">
+          <h2>Sync Settings</h2>
+          <span class="muted">hidden from main screen</span>
+        </div>
+        <label>Server IP</label>
+        <input id="serverIpModal" placeholder="Server IP">
+        <div class="muted" style="margin-top:8px;">Tip: leave blank if you are not syncing.</div>
+      </div>
+    </div>
+  </div>
+
+
+  <script>
+    const DEFAULT_PHASES = [
+      "Captured (customer arrived)",
+      "Artwork / Design Approved",
+      "Payment / Deposit Confirmed",
+      "In Production",
+      "Quality Check",
+      "Ready for Collection / Delivery",
+      "Completed"
+    ];
+    const ACTIVE_PHASES = DEFAULT_PHASES.filter(p => p !== "Completed");
+    const PRIORITY_ORDER = { "Urgent": 4, "High": 3, "Normal": 2, "Low": 1 };
+
+    let jobsCache = [];
+    let currentTab = 'active';   // active | completed | archived | all
+    let sortMode = 'smart';
+    let currentView = 'list';    // list | board
+    let editingJobId = null;
+    let cardJob = null;
+
+    function setView(v){
+      currentView = v;
+      document.getElementById('tabList').classList.toggle('active', v==='list');
+      document.getElementById('tabBoard').classList.toggle('active', v==='board');
+      document.getElementById('listView').style.display = (v==='list') ? 'block' : 'none';
+      document.getElementById('boardView').style.display = (v==='board') ? 'block' : 'none';
+      // completed tab is separate
+      renderAll();
+    }
+
+    function setTab(tab){ setStatusFilter(tab); }
+
+    function toggleArchive(){
+      setStatusFilter(currentTab === 'archived' ? 'active' : 'archived');
+    }
+
+    function syncStatusUI(){
+      const map = { active:'chipActive', completed:'chipCompleted', archived:'chipArchived', all:'chipAll' };
+      for (const k of Object.keys(map)){
+        document.getElementById(map[k])?.classList.toggle('active', currentTab === k);
+      }
+      document.getElementById('btnArchive')?.classList.toggle('active', currentTab === 'archived');
+
+      const s = document.getElementById('sortSelect');
+      if (s && s.value !== sortMode) s.value = sortMode;
+    }
+
+    function setStatusFilter(tab){
+      currentTab = tab;
+      syncStatusUI();
+      renderAll();
+    }
+
+    function onSortChange(v){
+      sortMode = v || 'smart';
+      renderAll();
+    }
+
+
+    // Customer mode (tablet/front desk capture): show ONLY New Job section
+    let customerMode = false;
+
+    function toggleCustomerMode(){
+      customerMode = !customerMode;
+      document.getElementById('btnCustomer')?.classList.toggle('active', customerMode);
+
+      if (customerMode){
+        document.body.classList.remove('jobsOnly');
+        document.body.classList.remove('formCollapsed');
+      }
+
+      applyCustomerModeUI();
+    }
+
+    function showJobs(){
+      customerMode = false;
+      document.getElementById('btnCustomer')?.classList.remove('active');
+
+      document.body.classList.remove('customerMode');
+      document.body.classList.remove('formCollapsed');
+      document.body.classList.add('jobsOnly');
+
+      setStatusFilter('all');
+    }
+
+    // Left panel collapse (layout)
+    function toggleFormCollapse(){
+      const on = !document.body.classList.contains('formCollapsed');
+      document.body.classList.toggle('formCollapsed', on);
+      try{ localStorage.setItem('formCollapsed', on ? '1' : '0'); }catch(e){}
+      const b = document.getElementById('btnCollapseForm');
+      if (b) b.textContent = on ? '⇔ Expand' : '⇔ Collapse';
+    }
+    function loadFormCollapse(){
+      try{
+        if (document.body.classList.contains('customerMode')) return;
+        if (document.body.classList.contains('jobsOnly')) return;
+
+        const v = localStorage.getItem('formCollapsed');
+        const on = v === '1';
+        document.body.classList.toggle('formCollapsed', on);
+        const b = document.getElementById('btnCollapseForm');
+        if (b) b.textContent = on ? '⇔ Expand' : '⇔ Collapse';
+      }catch(e){}
+    }
+
+    function applyCustomerModeUI(){
+      document.body.classList.toggle('customerMode', customerMode);
+
+      if (customerMode){
+        document.body.classList.remove('jobsOnly');
+        document.body.classList.remove('formCollapsed');
+
+        if (editingJobId) cancelEdit();
+        const b = document.getElementById('btnCollapseForm');
+        if (b) b.textContent = '⇔ Collapse';
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        focusCustomerField();
+      }
+    }
+
+
+    // Theme
+    function applyThemeFromStorage(){
+      const t = localStorage.getItem('emtac_theme') || 'light';
+      document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+    }
+    function toggleTheme(){
+      const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      const next = cur === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('emtac_theme', next);
+      applyThemeFromStorage();
+    (async ()=>{
+      try{
+        if (!window.api) return showStatus('API Missing', 'preload bridge failed', 'window.api is undefined');
+        const p = await window.api.ping();
+        if (!p?.ok) return showStatus('IPC Error', '', 'ping failed');
+      }catch(err){
+        showStatus('IPC Error', '', String(err?.message || err));
+      }
+    })();
+    }
+
+    function toggleForm(){
+      const el = document.getElementById('formPanel');
+      const isHidden = el.style.display === 'none';
+      el.style.display = isHidden ? 'block' : 'none';
+    }
+
+    function formatDateTime(iso){
+      if (!iso) return "(no date)";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "(invalid date)";
+      return d.toLocaleString();
+    }
+    function toNumberSafe(v){
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    }
+    function showStatus(title, sub, text){
+      const b = document.getElementById('statusBanner');
+      if (!b) return;
+      document.getElementById('statusBannerTitle').textContent = title || 'Status';
+      document.getElementById('statusBannerSub').textContent = sub || '';
+      document.getElementById('statusBannerText').textContent = text || '';
+      b.style.display = 'block';
+    }
+    function hideStatus(){
+      const b = document.getElementById('statusBanner');
+      if (b) b.style.display = 'none';
+    }
+    async function showDbInfo(){
+      try{
+        if (!window.api) return showStatus('API Missing', 'preload not available', 'window.api is undefined');
+        const info = await window.api.getDbInfo();
+        showStatus('DB Info', '', JSON.stringify(info, null, 2));
+      }catch(err){
+        showStatus('DB Info Error', '', String(err?.message || err));
+      }
+    }
+    window.addEventListener('error', (e)=>{
+      showStatus('Script Error', '', String(e?.message || e));
+    });
+    window.addEventListener('unhandledrejection', (e)=>{
+      showStatus('Unhandled Promise', '', String(e?.reason?.message || e?.reason || e));
+    });
+
+
+    function fillStatusSelect(selectEl, current){
+      selectEl.innerHTML = '';
+      DEFAULT_PHASES.forEach(p=>{
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        selectEl.appendChild(opt);
+      });
+      selectEl.value = (current && DEFAULT_PHASES.includes(current)) ? current : DEFAULT_PHASES[0];
+    }
+
+    function getType(){ return document.getElementById('jobType').value; }
+    function renderTypeFields(){
+      const t = getType();
+      document.getElementById('dtfSection').style.display = (t==='DTF') ? 'block' : 'none';
+      document.getElementById('embSection').style.display = (t==='Embroidery') ? 'block' : 'none';
+    }
+
+    function clearTypeFields(){
+      document.getElementById('dtf_size').value = '';
+      document.getElementById('dtf_filmLength').value = '';
+      document.getElementById('dtf_colourCount').value = '';
+      document.getElementById('dtf_press').checked = false;
+      document.getElementById('dtf_cutLines').checked = false;
+      document.getElementById('dtf_material').value = '';
+
+      document.getElementById('emb_stitchCount').value = '';
+      document.getElementById('emb_position').value = '';
+      document.getElementById('emb_threadColors').value = '';
+      document.getElementById('emb_backing').value = '';
+      document.getElementById('emb_applique').checked = false;
+    }
+
+    function createDefaultChecklist(){
+      return DEFAULT_PHASES.map((label, idx)=>({
+        id: `phase-${idx}`,
+        label,
+        done: false,
+        doneAt: null
+      }));
+    }
+
+    function ensureJob(job){
+      if (!job.checklist || !Array.isArray(job.checklist) || job.checklist.length === 0){
+        job.checklist = createDefaultChecklist();
+      }
+      if (!job.status) job.status = DEFAULT_PHASES[0];
+      if (typeof job.notes !== 'string') job.notes = '';
+      if (!job.priority) job.priority = 'Normal';
+      if (!job.dueDate) job.dueDate = '';
+      if (!Array.isArray(job.statusHistory)) job.statusHistory = [];
+      return job;
+    }
+
+    function addHistoryEntry(job, message){
+      const now = new Date().toISOString();
+      const entry = { at: now, message };
+      const history = Array.isArray(job.statusHistory) ? job.statusHistory : [];
+      return [...history, entry];
+    }
+
+    function computeStatusFromChecklist(job){
+      const doneItems = (job.checklist || []).filter(x => x.done);
+      if (doneItems.length === 0) return DEFAULT_PHASES[0];
+      const lastDone = [...job.checklist].reverse().find(x => x.done);
+      return lastDone?.label || DEFAULT_PHASES[0];
+    }
+
+    function buildDetails(job){
+      if (job?.type === 'DTF'){
+        const d = job.dtf || {};
+        const parts = [];
+        if (d.size) parts.push(`Size: ${d.size}`);
+        if (Number.isFinite(Number(d.filmLength))) parts.push(`Film: ${Number(d.filmLength)}m`);
+        if (Number.isFinite(Number(d.colourCount))) parts.push(`Colours: ${Number(d.colourCount)}`);
+        if (d.press) parts.push('Press: Yes');
+        if (d.cutLines) parts.push('Cut Lines: Yes');
+        if (d.material) parts.push(`Material: ${d.material}`);
+        return parts.join(' | ');
+      }
+      if (job?.type === 'Embroidery'){
+        const e = job.emb || {};
+        const parts = [];
+        if (Number.isFinite(Number(e.stitchCount))) parts.push(`Stitches: ${Number(e.stitchCount)}`);
+        if (e.position) parts.push(`Position: ${e.position}`);
+        if (Number.isFinite(Number(e.threadColors))) parts.push(`Thread colours: ${Number(e.threadColors)}`);
+        if (e.backing) parts.push(`Backing: ${e.backing}`);
+        if (e.applique) parts.push('Appliqué: Yes');
+        return parts.join(' | ');
+      }
+      return '';
+    }
+
+    function startOfTodayMs(){
+      const d = new Date();
+      d.setHours(0,0,0,0);
+      return d.getTime();
+    }
+    function dueDateToMs(dueDate){
+      if (!dueDate) return Number.POSITIVE_INFINITY;
+      const ms = Date.parse(dueDate + "T00:00:00");
+      return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+    }
+    function isCompleted(job){ return job.status === 'Completed'; }
+    function isArchived(job){ return !!job.archived; }
+
+    function dueState(job){
+      if (isCompleted(job)) return 'none';
+      if (!job.dueDate) return 'none';
+      const dueMs = dueDateToMs(job.dueDate);
+      const todayMs = startOfTodayMs();
+      if (!Number.isFinite(dueMs)) return 'none';
+      if (dueMs < todayMs) return 'overdue';
+      if (dueMs === todayMs) return 'today';
+      return 'none';
+    }
+    function dueChip(job){
+      const st = dueState(job);
+      if (st === 'overdue') return { text: 'OVERDUE', cls: 'chip red' };
+      if (st === 'today') return { text: 'DUE TODAY', cls: 'chip red' };
+      return null;
+    }
+    function priorityChip(p){
+      if (p === 'Urgent') return { text: 'Urgent', cls: 'chip red' };
+      if (p === 'High') return { text: 'High', cls: 'chip orange' };
+      if (p === 'Low') return { text: 'Low', cls: 'chip' };
+      return { text: 'Normal', cls: 'chip' };
+    }
+
+    function matchesFilters(job){
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const tf = document.getElementById('typeFilter').value;
+      const pf = document.getElementById('priorityFilter').value;
+
+      const searchOk = !q || (()=>{
+        const hay = [
+          job.jobNumber, job.id, job.customerName, job.customerPhone, job.customerEmail,
+          job.type, job.priority, job.item, job.description, job.notes, job.assignedTo
+        ].filter(Boolean).join(' ').toLowerCase();
+        return hay.includes(q);
+      })();
+
+      const typeOk = (tf === 'ALL') ? true : (job.type === tf);
+      const prioOk = (pf === 'ALL') ? true : ((job.priority || 'Normal') === pf);
+
+      return searchOk && typeOk && prioOk;
+    }
+
+    function getViewJobs(){
+      let items = jobsCache.slice().map(j=>ensureJob(j));
+
+      items = items.filter(j => {
+        if (currentTab === 'all') return true;
+        if (currentTab === 'archived') return isArchived(j);
+        if (currentTab === 'completed') return isCompleted(j) && !isArchived(j);
+        return !isCompleted(j);
+      });
+
+      items = items.filter(matchesFilters);
+
+      const toMs = (v)=>{ const t = Date.parse(v||''); return Number.isFinite(t) ? t : 0; };
+      if (sortMode === 'newest'){
+        items.sort((a,b)=>toMs(b.createdAt)-toMs(a.createdAt));
+      } else if (sortMode === 'oldest'){
+        items.sort((a,b)=>toMs(a.createdAt)-toMs(b.createdAt));
+      } else if (sortMode === 'updated'){
+        items.sort((a,b)=>toMs(b.updatedAt)-toMs(a.updatedAt));
+      } else if (sortMode === 'customer'){
+        const n = (x)=>String(x||'').toLowerCase();
+        items.sort((a,b)=> n(a.customerName).localeCompare(n(b.customerName)));
+      } else {
+        items.sort((a,b)=>{
+          const pa = PRIORITY_ORDER[a.priority || 'Normal'] || 2;
+          const pb = PRIORITY_ORDER[b.priority || 'Normal'] || 2;
+          if (pa !== pb) return pb - pa;
+
+          const da = dueDateToMs(a.dueDate);
+          const db = dueDateToMs(b.dueDate);
+          if (da !== db) return da - db;
+
+          const ac = toMs(a.createdAt);
+          const bc = toMs(b.createdAt);
+          return bc - ac;
+        });
+      }
+
+      return items;
+    }
+
+    function renderDashboard(){
+      const all = jobsCache.slice().map(j=>ensureJob(j));
+      const active = all.filter(j => !isCompleted(j));
+      const completed = all.filter(j => isCompleted(j));
+      const dueToday = active.filter(j => dueState(j) === 'today');
+      const overdue = active.filter(j => dueState(j) === 'overdue');
+
+      const dash = document.getElementById('dash');
+      dash.innerHTML = '';
+
+      const stats = [
+        { k: 'Active Jobs', v: active.length, hint: 'not completed' },
+        { k: 'Due Today', v: dueToday.length, hint: 'needs attention' },
+        { k: 'Overdue', v: overdue.length, hint: 'bold red in list' },
+        { k: 'Completed', v: completed.length, hint: 'finished jobs' },
+        ];
+      const statsShown = stats.filter(s => !String(s.k).startsWith('Revenue'));
+
+
+      stats.forEach(s=>{
+        const el = document.createElement('div');
+        el.className = 'stat';
+        el.innerHTML = `<div class="k">${s.k}</div><div class="v">${s.v}</div><div class="hint">${s.hint}</div>`;
+        dash.appendChild(el);
+      });
+    }
+
+    function renderList(){
+      const viewJobs = getViewJobs();
+      document.getElementById('viewCount').textContent = `Showing ${viewJobs.length} of ${jobsCache.length}`;
+
+      const list = document.getElementById('listView');
+      list.innerHTML = '';
+
+      // Sticky urgent section: Overdue + Due Today (always on top)
+      const urgent = viewJobs.filter(j => {
+        const s = dueState(j);
+        return s === 'overdue' || s === 'today';
+      });
+      const normal = viewJobs.filter(j => {
+        const s = dueState(j);
+        return !(s === 'overdue' || s === 'today');
+      });
+
+      if (urgent.length > 0){
+        const sticky = document.createElement('div');
+        sticky.className = 'stickyUrgent';
+        sticky.innerHTML = `<h4>Priority: OVERDUE & DUE TODAY</h4>`;
+        const ug = document.createElement('div');
+        ug.className = 'urgentGrid';
+        sticky.appendChild(ug);
+
+        urgent.forEach(job => ug.appendChild(buildJobCard(job, true)));
+        list.appendChild(sticky);
+      }
+
+      // Remaining jobs
+      normal.forEach(job => {
+        list.appendChild(buildJobCard(job, false));
+      });
+    }
+
+    function statusClassFor(status){
+      const s = String(status || '');
+      if (s === 'Completed') return 'phase-done';
+      if (s.includes('Captured')) return 'phase-captured';
+      if (s.includes('Artwork')) return 'phase-art';
+      if (s.includes('Payment')) return 'phase-pay';
+      if (s.includes('In Production')) return 'phase-prod';
+      if (s.includes('Quality')) return 'phase-qc';
+      if (s.includes('Ready')) return 'phase-ready';
+      return '';
+    }
+
+    function buildJobCard(job, isUrgentCard){
+      const card = document.createElement('div');
+      card.className = 'jobCard';
+
+      // collapse state (per job)
+      const key = 'emtac_collapsed_' + job.id;
+      const collapsed = localStorage.getItem(key) === '1';
+      if (collapsed) card.classList.add('collapsed');
+
+      const title = document.createElement('p');
+      title.className = 'jobTitle';
+      title.textContent = `[${job.type}] ${job.description}`;
+
+      const numberTag = document.createElement('div');
+      numberTag.className = 'chip';
+      numberTag.style.marginBottom = '6px';
+      numberTag.textContent = job.jobNumber ? ('Job No: ' + job.jobNumber) : '';
+
+      const header = document.createElement('div');
+      header.className = 'jobTop jobHeader';
+
+      const left = document.createElement('div');
+      if (job.jobNumber) left.appendChild(numberTag);
+      left.appendChild(title);
+
+      // Header chips: Priority + Status + Due badge
+      const headerChips = document.createElement('div');
+      headerChips.className = 'rowInline';
+      headerChips.style.marginTop = '8px';
+
+      const pchip = priorityChip(job.priority || 'Normal');
+      const p = document.createElement('span');
+      p.className = pchip.cls;
+      p.textContent = pchip.text;
+
+      const st = document.createElement('span');
+      const stClass = statusClassFor(job.status);
+      st.className = 'chip ' + (stClass || '');
+      st.textContent = job.status || DEFAULT_PHASES[0];
+
+      headerChips.appendChild(p);
+      headerChips.appendChild(st);
+
+      const dchip = dueChip(job);
+      if (dchip){
+        const d = document.createElement('span');
+        d.className = dchip.cls;
+        d.textContent = dchip.text;
+        headerChips.appendChild(d);
+      }
+
+      left.appendChild(headerChips);
+
+      // Right buttons (always visible)
+      const btns = document.createElement('div');
+      btns.className = 'jobBtns';
+
+      const bOpen = document.createElement('button');
+      bOpen.className = 'btn btnSmall';
+      bOpen.textContent = 'Open Job Card';
+      bOpen.onclick = (e) => { e.stopPropagation(); openCard(job); };
+
+      const bQuick = document.createElement('button');
+      bQuick.className = 'btn btnSmall';
+      if (!isCompleted(job)){
+        bQuick.textContent = 'Mark Completed';
+        bQuick.onclick = (e) => { e.stopPropagation(); markCompleted(job); };
+      } else {
+        bQuick.textContent = 'Re-open';
+        bQuick.onclick = (e) => { e.stopPropagation(); reopenJob(job); };
+      }
+
+      const bEdit = document.createElement('button');
+      bEdit.className = 'btn btnSmall';
+      bEdit.textContent = 'Edit';
+      bEdit.onclick = (e) => { e.stopPropagation(); setEditMode(job); };
+
+      const bDel = document.createElement('button');
+      bDel.className = 'btn btnSmall';
+      bDel.textContent = 'Delete';
+      bDel.onclick = (e) => { e.stopPropagation(); deleteJob(job.id); };
+
+      btns.appendChild(bOpen);
+      if (!isUrgentCard) btns.appendChild(bQuick); // urgent cards stay minimal
+      btns.appendChild(bEdit);
+      btns.appendChild(bDel);
+
+      header.appendChild(left);
+      header.appendChild(btns);
+
+      // Collapsible details
+      const details = document.createElement('div');
+      details.className = 'jobDetails';
+
+      const meta = document.createElement('div');
+      meta.className = 'jobMeta';
+      const customer = job.customerName ? `Customer: ${job.customerName}` : 'Customer: -';
+      const due = job.dueDate ? `Due: ${job.dueDate}` : 'Due: -';
+      meta.textContent = `${customer}  •  ${due}  •  Qty: ${job.quantity}`;
+
+      const detailText = buildDetails(job);
+      const extra = document.createElement('div');
+      extra.className = 'rowInline';
+      extra.style.marginTop = '8px';
+      if (detailText){
+        const dd = document.createElement('span');
+        dd.className = 'chip';
+        dd.textContent = detailText;
+        extra.appendChild(dd);
+      }
+      const created = document.createElement('span');
+      created.className = 'chip';
+      created.textContent = `Created: ${formatDateTime(job.createdAt)}`;
+      extra.appendChild(created);
+
+      details.appendChild(meta);
+      details.appendChild(extra);
+
+      // toggle collapse by clicking header
+      header.onclick = () => {
+        const willCollapse = !card.classList.contains('collapsed');
+        card.classList.toggle('collapsed', willCollapse);
+        localStorage.setItem(key, willCollapse ? '1' : '0');
+      };
+
+      card.appendChild(header);
+      card.appendChild(details);
+      return card;
+    }
+
+    // Board view (active only)
+    function renderBoard(){
+      const host = document.getElementById('boardView');
+      host.innerHTML = '';
+
+      const viewJobs = getViewJobs(); // respects filters
+
+      // If Completed filter is ON, show a simple single-column board (no drag/drop).
+      if (currentTab === 'completed'){
+        const board = document.createElement('div');
+        board.className = 'board';
+        board.style.gridTemplateColumns = '1fr';
+
+        const col = document.createElement('div');
+        col.className = 'col';
+
+        const header = document.createElement('div');
+        header.className = 'colHeader';
+        header.innerHTML = `<span>Completed</span><span>${viewJobs.length}</span>`;
+
+        const zone = document.createElement('div');
+        zone.className = 'dropZone';
+
+        viewJobs.forEach(job=>{
+          const tile = document.createElement('div');
+          tile.className = 'tile';
+          tile.draggable = false;
+          tile.style.cursor = 'pointer';
+          tile.onclick = ()=> openCard(job);
+
+          const t = document.createElement('p');
+          t.className = 'tileTitle';
+          t.textContent = `[${job.type}] ${job.customerName || 'Customer'} — ${job.description}`;
+
+          const sub = document.createElement('div');
+          sub.className = 'tileSub';
+          const dueTxt = job.dueDate ? job.dueDate : '-';
+          sub.textContent = `Due: ${dueTxt} · Priority: ${job.priority || 'Normal'}`;
+
+          tile.appendChild(t);
+          tile.appendChild(sub);
+          zone.appendChild(tile);
+        });
+
+        col.appendChild(header);
+        col.appendChild(zone);
+        board.appendChild(col);
+        host.appendChild(board);
+        return;
+      }
+
+      const activeJobs = viewJobs.filter(j => !isCompleted(j));
+
+      const board = document.createElement('div');
+      board.className = 'board';
+
+      ACTIVE_PHASES.forEach(phase=>{
+        const col = document.createElement('div');
+        col.className = 'col';
+
+        const header = document.createElement('div');
+        header.className = 'colHeader';
+        const count = activeJobs.filter(j => (j.status || DEFAULT_PHASES[0]) === phase).length;
+        header.innerHTML = `<span>${phase}</span><span>${count}</span>`;
+
+        const zone = document.createElement('div');
+        zone.className = 'dropZone';
+        zone.dataset.phase = phase;
+
+        zone.ondragover = (e) => { e.preventDefault(); };
+        zone.ondrop = async (e) => {
+          e.preventDefault();
+          const jobId = e.dataTransfer.getData('text/jobId');
+          if (!jobId) return;
+
+          const job = jobsCache.find(x => x.id === jobId);
+          if (!job) return;
+
+          const newStatus = phase;
+          if ((job.status || DEFAULT_PHASES[0]) === newStatus) return;
+
+          // Update status + history
+          const nextHistory = addHistoryEntry(job, `Status set to: ${newStatus} (via Board)`);
+          const result = await window.api.updateJob(jobId, { status: newStatus, statusHistory: nextHistory });
+          if (!result.success) {
+            alert("Move failed: " + result.error);
+            return;
+          }
+          await loadJobs();
+
+    syncStatusUI();
+    loadFormCollapse();
+    applyCustomerModeUI();
+        };
+
+        activeJobs
+          .filter(j => (j.status || DEFAULT_PHASES[0]) === phase)
+          .forEach(job=>{
+            const tile = document.createElement('div');
+            tile.className = 'tile';
+            tile.draggable = true;
+            tile.ondragstart = (e)=>{
+              e.dataTransfer.setData('text/jobId', job.id);
+              e.dataTransfer.effectAllowed = 'move';
+            };
+            tile.onclick = ()=> openCard(job);
+
+            const t = document.createElement('p');
+            t.className = 'tileTitle';
+            t.textContent = `[${job.type}] ${job.customerName || 'Customer'} — ${job.description}`;
+
+            const sub = document.createElement('div');
+            sub.className = 'tileSub';
+            const d = dueChip(job);
+            const dueTxt = job.dueDate ? job.dueDate : '-';
+            sub.textContent = `Due: ${dueTxt} · Priority: ${job.priority || 'Normal'}`;
+            if (d){
+              sub.style.color = 'var(--danger)';
+              sub.style.fontWeight = '800';
+            }
+
+            tile.appendChild(t);
+            tile.appendChild(sub);
+            zone.appendChild(tile);
+          });
+
+        col.appendChild(header);
+        col.appendChild(zone);
+        board.appendChild(col);
+      });
+
+      host.appendChild(board);
+    }
+
+    function renderAll(){
+      syncStatusUI();
+      renderDashboard();
+      if (currentView === 'board') renderBoard();
+      else renderList();
+    }
+
+    // ---- CRUD & form ----
+    function buildTypePayload(){
+      const type = getType();
+      if (type === 'DTF'){
+        const filmLength = Number(document.getElementById('dtf_filmLength').value);
+        const colourCount = Number(document.getElementById('dtf_colourCount').value);
+        return {
+          type,
+          dtf: {
+            size: document.getElementById('dtf_size').value.trim(),
+            filmLength: Number.isFinite(filmLength) ? filmLength : null,
+            colourCount: Number.isFinite(colourCount) ? colourCount : null,
+            press: document.getElementById('dtf_press').checked,
+            cutLines: document.getElementById('dtf_cutLines').checked,
+            material: document.getElementById('dtf_material').value.trim()
+          },
+          emb: undefined
+        };
+      }
+      const stitchCount = Number(document.getElementById('emb_stitchCount').value);
+      const threadColors = Number(document.getElementById('emb_threadColors').value);
+      return {
+        type,
+        emb: {
+          stitchCount: Number.isFinite(stitchCount) ? stitchCount : null,
+          position: document.getElementById('emb_position').value.trim(),
+          threadColors: Number.isFinite(threadColors) ? threadColors : null,
+          backing: document.getElementById('emb_backing').value.trim(),
+          applique: document.getElementById('emb_applique').checked
+        },
+        dtf: undefined
+      };
+    }
+
+    function setEditMode(job){
+      job = ensureJob(JSON.parse(JSON.stringify(job)));
+      editingJobId = job.id;
+
+      document.getElementById('editHint').textContent = 'Editing';
+      document.getElementById('saveBtn').textContent = 'Save Changes';
+      document.getElementById('cancelEditBtn').style.display = 'inline-block';
+
+      document.getElementById('jobType').value = job.type || 'DTF';
+      renderTypeFields();
+
+      document.getElementById('customerName').value = job.customerName ?? '';
+      document.getElementById('customerPhone').value = job.customerPhone ?? '';
+      document.getElementById('customerEmail').value = job.customerEmail ?? '';
+
+      document.getElementById('description').value = job.description ?? '';
+      document.getElementById('quantity').value = job.quantity ?? '';
+document.getElementById('dueDate').value = job.dueDate || '';
+      document.getElementById('priority').value = job.priority || 'Normal';
+
+      fillStatusSelect(document.getElementById('statusSelect'), job.status || DEFAULT_PHASES[0]);
+
+      clearTypeFields();
+
+      if (job.type === 'DTF'){
+        const d = job.dtf || {};
+        document.getElementById('dtf_size').value = d.size ?? '';
+        document.getElementById('dtf_filmLength').value = (d.filmLength ?? '');
+        document.getElementById('dtf_colourCount').value = (d.colourCount ?? '');
+        document.getElementById('dtf_press').checked = !!d.press;
+        document.getElementById('dtf_cutLines').checked = !!d.cutLines;
+        document.getElementById('dtf_material').value = d.material ?? '';
+      }
+      if (job.type === 'Embroidery'){
+        const e = job.emb || {};
+        document.getElementById('emb_stitchCount').value = (e.stitchCount ?? '');
+        document.getElementById('emb_position').value = e.position ?? '';
+        document.getElementById('emb_threadColors').value = (e.threadColors ?? '');
+        document.getElementById('emb_backing').value = e.backing ?? '';
+        document.getElementById('emb_applique').checked = !!e.applique;
+      }
+
+      // ensure form visible
+      document.getElementById('formPanel').style.display = 'block';
+    }
+
+    function clearNewJobForm(){
+      document.getElementById('jobType').value = 'DTF';
+      renderTypeFields();
+
+      document.getElementById('customerName').value = '';
+      document.getElementById('customerPhone').value = '';
+      document.getElementById('customerEmail').value = '';
+
+      document.getElementById('description').value = '';
+      document.getElementById('dueDate').value = '';
+      document.getElementById('priority').value = 'Normal';
+      document.getElementById('statusSelect').value = DEFAULT_PHASES[0];
+      document.getElementById('quantity').value = '';
+    }
+
+    function focusCustomerField(){
+      const el = document.getElementById('customerName');
+      if (el){ el.focus(); }
+    }
+
+    function cancelEdit(){
+      editingJobId = null;
+      document.getElementById('editHint').textContent = 'New Job';
+      document.getElementById('saveBtn').textContent = 'Add Job';
+      document.getElementById('cancelEditBtn').style.display = 'none';
+
+      document.getElementById('jobType').value = 'DTF';
+      renderTypeFields();
+
+      document.getElementById('customerName').value = '';
+      document.getElementById('customerPhone').value = '';
+      document.getElementById('customerEmail').value = '';
+
+      document.getElementById('description').value = '';
+      document.getElementById('quantity').value = '';
+document.getElementById('dueDate').value = '';
+      document.getElementById('priority').value = 'Normal';
+
+      fillStatusSelect(document.getElementById('statusSelect'), DEFAULT_PHASES[0]);
+      clearTypeFields();
+    }
+
+    async function saveJob(saveAndNew=false){
+      const typePayload = buildTypePayload();
+      const description = document.getElementById('description').value.trim();
+      const quantityRaw = document.getElementById('quantity').value;
+      const quantity = quantityRaw === '' ? 1 : Number(quantityRaw);
+
+      const customerName = document.getElementById('customerName').value.trim();
+      const customerPhone = document.getElementById('customerPhone').value.trim();
+      const customerEmail = document.getElementById('customerEmail').value.trim();
+
+      const status = document.getElementById('statusSelect').value;
+      const dueDate = document.getElementById('dueDate').value;
+      const priority = document.getElementById('priority').value || 'Normal';
+
+      if (!description) return alert("Please enter a description.");
+      if (Number.isNaN(quantity)) { return alert("Quantity must be a number (or leave blank for 1)."); }
+
+      const wantsAutoPrint = !!document.getElementById('autoPrintAfterSave')?.checked;
+
+      if (!editingJobId){
+        const newJob = ensureJob({
+          type: typePayload.type,
+          dtf: typePayload.dtf,
+          emb: typePayload.emb,
+          customerName, customerPhone, customerEmail,
+          description, quantity,
+          dueDate, priority,
+          status: DEFAULT_PHASES.includes(status) ? status : DEFAULT_PHASES[0],
+          checklist: createDefaultChecklist(),
+          notes: '',
+          statusHistory: []
+        });
+        newJob.statusHistory = addHistoryEntry(newJob, `Job created (Status: ${newJob.status})`);
+
+        const result = await window.api.addJob(newJob);
+        if (!result.success) return alert("Error: " + result.error);
+
+        if (result.job){
+          cardJob = ensureJob(result.job);
+          if (customerMode && wantsAutoPrint){
+            try{ await printJobCardToPrinter(); }catch(e){}
+          }
+        }
+
+        if (customerMode && saveAndNew){
+          clearNewJobForm();
+          focusCustomerField();
+          await loadJobs();
+          return;
+        }
+
+        cancelEdit();
+        await loadJobs();
+        return;
+      }
+
+      const patch = {
+        type: typePayload.type,
+        dtf: typePayload.dtf,
+        emb: typePayload.emb,
+        customerName, customerPhone, customerEmail,
+        description, quantity,
+        dueDate, priority,
+        status: DEFAULT_PHASES.includes(status) ? status : DEFAULT_PHASES[0],
+      };
+
+      const result = await window.api.updateJob(editingJobId, patch);
+      if (!result.success) return alert("Error: " + result.error);
+
+      if (customerMode && wantsAutoPrint){
+        try{ await printJobCardToPrinter(); }catch(e){}
+      }
+
+      if (customerMode && saveAndNew){
+        cancelEdit();
+        clearNewJobForm();
+        focusCustomerField();
+        await loadJobs();
+        return;
+      }
+
+      cancelEdit();
+      await loadJobs();
+    }
+
+    async function deleteJob(jobId){
+      const ok = confirm("Delete this job?");
+      if (!ok) return;
+
+      const result = await window.api.deleteJob(jobId);
+      if (!result.success) return alert("Error: " + result.error);
+
+      if (editingJobId === jobId) cancelEdit();
+      if (cardJob && cardJob.id === jobId) closeCard();
+      await loadJobs();
+    }
+
+    async function markCompleted(job){
+      const ok = confirm(`Mark as Completed?\n\n${job.description}`);
+      if (!ok) return;
+
+      const now = new Date().toISOString();
+      const checklist = (job.checklist && Array.isArray(job.checklist) && job.checklist.length)
+        ? job.checklist.map(x => ({ ...x, done: true, doneAt: x.doneAt || now }))
+        : createDefaultChecklist().map(x => ({ ...x, done: true, doneAt: now }));
+
+      job.statusHistory = addHistoryEntry(job, "Marked as Completed");
+
+      const result = await window.api.updateJob(job.id, {
+        status: "Completed",
+        completedAt: now,
+        archived: false,
+        archivedAt: null,
+        checklist,
+        statusHistory: job.statusHistory
+      });
+
+      if (!result.success) return alert("Failed: " + result.error);
+
+      await loadJobs();
+      setTab('completed');
+    }
+
+    async function reopenJob(job){
+      const ok = confirm(`Re-open this job?\n\n${job.description}`);
+      if (!ok) return;
+
+      const statusFromChecklist = (job.checklist && Array.isArray(job.checklist))
+        ? computeStatusFromChecklist(job)
+        : DEFAULT_PHASES[0];
+
+      const newStatus = (statusFromChecklist === "Completed") ? "In Production" : statusFromChecklist;
+      job.statusHistory = addHistoryEntry(job, `Re-opened (Status: ${newStatus})`);
+
+      const result = await window.api.updateJob(job.id, {
+        status: newStatus,
+        completedAt: null,
+        archived: false,
+        archivedAt: null,
+        statusHistory: job.statusHistory
+      });
+
+      if (!result.success) return alert("Failed: " + result.error);
+
+      await loadJobs();
+      setTab('active');
+    }
+
+    // ---- Settings ----
+    async function saveSettings(){
+      const serverIp = (document.getElementById('serverIpModal') || document.getElementById('serverIp')).value.trim();
+      document.getElementById('serverIp').value = serverIp;
+      const result = await window.api.saveSettings({ serverIp });
+      if (result?.success) alert("Settings saved");
+      else alert("Settings save failed: " + (result?.error || 'Unknown error'));
+    }
+
+    function openSettings(){
+      const ov = document.getElementById('settingsOverlay');
+      if (!ov) return;
+      // preload modal input from hidden field
+      const src = document.getElementById('serverIp');
+      const dest = document.getElementById('serverIpModal');
+      if (dest && src) dest.value = src.value || '';
+      ov.style.display = 'flex';
+    }
+    function closeSettings(){
+      const ov = document.getElementById('settingsOverlay');
+      if (ov) ov.style.display = 'none';
+    }
+    async function saveSettingsFromModal(){
+      await saveSettings();
+      closeSettings();
+    }
+
+
+    // ---- Export PDF ----
+    async function exportPdf(){
+      const jobs = await window.api.getJobs();
+      const result = await window.api.exportJobsPdf({ title: 'EMTAC Job Report', jobs });
+      if (result.success) alert("PDF saved:\n" + result.filePath);
+      else if (result.error !== 'Cancelled') alert("PDF export failed: " + result.error);
+    }
+
+    // ---- Job Card overlay ----
+    function overlayClick(e){ if (e.target.id === 'overlay') closeCard(); }
+
+    function renderHistory(){
+      const wrap = document.getElementById('history');
+      wrap.innerHTML = '';
+      const history = (cardJob && Array.isArray(cardJob.statusHistory)) ? cardJob.statusHistory : [];
+      if (history.length === 0){
+        wrap.innerHTML = `<div class="muted">No history yet.</div>`;
+        return;
+      }
+      history.slice().reverse().forEach(h=>{
+        const line = document.createElement('div');
+        line.className = 'muted';
+        line.textContent = `${formatDateTime(h.at)} — ${h.message}`;
+        wrap.appendChild(line);
+      });
+    }
+
+    function openCard(job){
+      cardJob = ensureJob(JSON.parse(JSON.stringify(job)));
+      document.getElementById('overlay').style.display = 'flex';
+
+      document.getElementById('cardTitle').textContent =
+        `Job Card: ${cardJob.customerName || '(No Customer)'} — ${cardJob.description || ''}`;
+
+      const cust = [
+        cardJob.customerName ? `Name: ${cardJob.customerName}` : 'Name: -',
+        cardJob.customerPhone ? `Phone: ${cardJob.customerPhone}` : 'Phone: -',
+        cardJob.customerEmail ? `Email: ${cardJob.customerEmail}` : 'Email: -'
+      ].join(' | ');
+      document.getElementById('cardCustomer').textContent = cust;
+
+      const details = buildDetails(cardJob);
+      document.getElementById('cardSummary').textContent =
+        `[${cardJob.type || 'No Type'}] Qty: ${cardJob.quantity}` +
+        (details ? ` | ${details}` : '') +
+        ` | Created: ${formatDateTime(cardJob.createdAt)}`;
+
+      const prio = cardJob.priority || 'Normal';
+      const dueTxt = cardJob.dueDate || '-';
+      document.getElementById('cardDuePrio').textContent = `Due: ${dueTxt} • Priority: ${prio}`;
+
+      const badgeWrap = document.getElementById('cardDueBadge');
+      badgeWrap.innerHTML = '';
+      const d = dueChip(cardJob);
+      if (d){
+        const b = document.createElement('span');
+        b.className = d.cls;
+        b.textContent = d.text;
+        badgeWrap.appendChild(b);
+      }
+
+      fillStatusSelect(document.getElementById('cardStatusSelect'), cardJob.status || DEFAULT_PHASES[0]);
+      document.getElementById('cardNotes').value = cardJob.notes || '';
+
+      renderChecklist();
+      renderHistory();
+    }
+
+    function closeCard(){
+      cardJob = null;
+      document.getElementById('overlay').style.display = 'none';
+      document.getElementById('checklist').innerHTML = '';
+      document.getElementById('history').innerHTML = '';
+      document.getElementById('cardNotes').value = '';
+      document.getElementById('cardDueBadge').innerHTML = '';
+    }
+
+    function renderChecklist(){
+      const wrap = document.getElementById('checklist');
+      wrap.innerHTML = '';
+
+      (cardJob.checklist || []).forEach((item, idx)=>{
+        const row = document.createElement('div');
+        row.className = 'checkItem';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!item.done;
+        cb.onchange = async ()=>{
+          const updated = cardJob.checklist.map((x,i)=>{
+            if (i !== idx) return x;
+            const now = new Date().toISOString();
+            return { ...x, done: cb.checked, doneAt: cb.checked ? now : null };
+          });
+          cardJob.checklist = updated;
+
+          const label = cardJob.checklist[idx].label;
+          const msg = cb.checked ? `Ticked: ${label}` : `Unticked: ${label}`;
+          cardJob.statusHistory = addHistoryEntry(cardJob, msg);
+
+          cardJob.status = computeStatusFromChecklist(cardJob);
+          fillStatusSelect(document.getElementById('cardStatusSelect'), cardJob.status);
+
+          const result = await window.api.updateJob(cardJob.id, {
+            checklist: cardJob.checklist,
+            status: cardJob.status,
+            statusHistory: cardJob.statusHistory
+          });
+
+          if (!result.success) alert("Checklist save failed: " + result.error);
+          await loadJobs();
+          renderHistory();
+        };
+
+        const lbl = document.createElement('div');
+        lbl.style.fontWeight = '700';
+        lbl.textContent = item.label;
+
+        const ts = document.createElement('div');
+        ts.className = 'muted';
+        ts.textContent = item.doneAt ? `Done: ${formatDateTime(item.doneAt)}` : '';
+
+        const box = document.createElement('div');
+        box.appendChild(lbl);
+        box.appendChild(ts);
+
+        row.appendChild(cb);
+        row.appendChild(box);
+        wrap.appendChild(row);
+      });
+    }
+
+    async function saveNotes(){
+      if (!cardJob) return;
+      const notes = document.getElementById('cardNotes').value || '';
+      cardJob.notes = notes;
+
+      const result = await window.api.updateJob(cardJob.id, { notes });
+      if (!result.success) return alert("Notes save failed: " + result.error);
+
+      await loadJobs();
+      alert("Notes saved");
+    }
+
+    async function saveCardStatus(){
+      if (!cardJob) return;
+      const status = document.getElementById('cardStatusSelect').value;
+      cardJob.status = status;
+      cardJob.statusHistory = addHistoryEntry(cardJob, `Status set to: ${status}`);
+
+      
+      // Track completedAt for 30-day auto-archive
+      if (status === 'Completed' && !cardJob.completedAt) { cardJob.completedAt = new Date().toISOString(); cardJob.completedAtSource = 'user'; }
+      if (status !== 'Completed') { cardJob.completedAt = null; cardJob.completedAtSource = null; cardJob.archived = false; cardJob.archivedAt = null; }
+
+      const result = await window.api.updateJob(cardJob.id, {
+        status,
+        completedAt: cardJob.completedAt,
+        archived: !!cardJob.archived,
+        archivedAt: cardJob.archivedAt || null,
+        statusHistory: cardJob.statusHistory
+      });
+
+      if (!result.success) return alert("Status save failed: " + result.error);
+
+      await loadJobs();
+      renderHistory();
+      alert("Status saved");
+    }
+
+    // Job card PDF
+    async function printJobCardPdf(){
+      if (!cardJob) return;
+      const title = `Job Card - ${cardJob.customerName || 'Customer'} - ${cardJob.description || ''}`.trim();
+      const result = await window.api.exportJobsPdf({ title, jobs: [cardJob] });
+      if (result.success) alert("Job Card PDF saved:\n" + result.filePath);
+      else if (result.error !== 'Cancelled') alert("Job Card PDF failed: " + result.error);
+    }
+
+    // Print to printer
+    function escapeHtml(s){
+      return String(s ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function buildPrintableJobHtml(job){
+      const details = buildDetails(job);
+      const dueText = job.dueDate || '-';
+      const prio = job.priority || 'Normal';
+
+      const checklist = (job.checklist || []).map(i => `
+        <div style="margin:6px 0;">
+          <span style="display:inline-block;width:16px;">${i.done ? '☑' : '☐'}</span>
+          <span>${escapeHtml(i.label)}</span>
+          ${i.doneAt ? `<span style="color:#666;font-size:12px;"> (${escapeHtml(formatDateTime(i.doneAt))})</span>` : ''}
+        </div>
+      `).join('');
+
+      const history = (job.statusHistory || []).slice().reverse().map(h => `
+        <div style="margin:4px 0;color:#666;font-size:12px;">
+          ${escapeHtml(formatDateTime(h.at))} — ${escapeHtml(h.message)}
+        </div>
+      `).join('');
+
+      return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(job.customerName || 'Job Card')}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; }
+    h1 { margin: 0 0 10px 0; font-size: 20px; }
+    .muted { color: #666; font-size: 12px; margin-bottom: 10px; }
+    .box { border: 1px solid #ddd; padding: 12px; border-radius: 10px; margin: 12px 0; }
+    .row { display:flex; flex-wrap:wrap; gap:12px; }
+  
+    
+
+    body.customerMode #dash{ display:none !important; }
+    body.customerMode .grid > .panel:last-child{ display:none !important; }
+    body.customerMode #btnArchive,
+    body.customerMode #btnSettings,
+    body.customerMode #btnPdf_REMOVED{
+      display:none !important;
+    }
+    
+    .rightControls{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px; }
+    .rightControls .chipRow{ margin-top:0 !important; }
+    .rightControls .searchRow{ margin-top:0 !important; flex:1; min-width:280px; justify-content:flex-end; }
+    .rightControls .searchRow input{ flex:1; min-width:220px; }
+    .rightControls .searchRow select{ min-width:180px; }
+    
+    html, body{ height:100%; }
+    .wrap{ min-height:100vh; display:flex; flex-direction:column; }
+    .grid{ flex:1; }
+
+    /* Collapsible left panel */
+    body.formCollapsed .grid > .panel:first-child{
+      flex:0 0 54px !important;
+      max-width:54px !important;
+      overflow:hidden;
+      padding:10px !important;
+    }
+    body.formCollapsed #formPanel label,
+    body.formCollapsed #formPanel input,
+    body.formCollapsed #formPanel select,
+    body.formCollapsed #formPanel textarea,
+    body.formCollapsed #formPanel .row2,
+    body.formCollapsed #formPanel .rowInline,
+    body.formCollapsed #formPanel .formActions,
+    body.formCollapsed #formPanel #editHint{
+      display:none !important;
+    }
+    body.formCollapsed #formPanel .panelTitle{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+    }
+    body.formCollapsed #formPanel .panelTitle h2{ font-size:12px; margin:0; }
+    body.formCollapsed #btnCollapseForm{ width:100%; }
+
+    /* Right panel full height with scrolling list */
+    .grid > .panel:last-child{ display:flex; flex-direction:column; height:calc(100vh - 160px); }
+    .rightTop{ position:sticky; top:0; background:var(--card); z-index:5; padding-bottom:10px; }
+    .views{ flex:1; overflow:auto; }
+    
+    /* Jobs-only mode: hide the left form panel */
+    body.jobsOnly .grid > .panel:first-child{ display:none !important; }
+
+    /* Customer mode polish (tablet) */
+    body.customerMode #saveNewBtn,
+    body.customerMode #autoPrintWrap{ display:inline-flex !important; }
+    body.customerMode #cancelEditBtn{ display:none !important; }
+    body.customerMode .rightTop,
+    body.customerMode .views{ display:none !important; }
+    body.customerMode .panel{ border-width:2px; }
+    body.customerMode label{ font-size:16px; }
+    body.customerMode input, body.customerMode select, body.customerMode textarea{
+      font-size:18px;
+      padding:14px 14px;
+      border-radius:12px;
+    }
+    body.customerMode textarea{ min-height:120px; }
+    body.customerMode .btn{ padding:14px 16px; font-size:16px; }
+    body.customerMode .chip{ font-size:14px; }
+    </style>
+</head>
+<body>
+  <h1>Job Card</h1>
+  <div class="muted">Printed: ${escapeHtml(new Date().toLocaleString())}</div>
+
+  <div class="box">
+    <div class="row">
+      <div><strong>Type:</strong> ${escapeHtml(job.type || '-')}</div>
+      <div><strong>Status:</strong> ${escapeHtml(job.status || '-')}</div>
+      <div><strong>Due:</strong> ${escapeHtml(dueText)}</div>
+      <div><strong>Priority:</strong> ${escapeHtml(prio)}</div>
+    </div>
+    <div style="margin-top:8px;"><strong>Description:</strong> ${escapeHtml(job.description || '')}</div>
+    <div style="margin-top:8px;"><strong>Qty:</strong> ${escapeHtml(job.quantity)} &nbsp; </div>
+    ${details ? `<div style="margin-top:8px;"><strong>Details:</strong> ${escapeHtml(details)}</div>` : ''}
+  </div>
+
+  <div class="box">
+    <strong>Customer</strong>
+    <div style="margin-top:6px;">
+      <div>${escapeHtml(job.customerName || '-')}</div>
+      <div class="muted">${escapeHtml(job.customerPhone || '')}${job.customerEmail ? ' | ' + escapeHtml(job.customerEmail) : ''}</div>
+    </div>
+  </div>
+
+  <div class="box">
+    <strong>Checklist</strong>
+    <div style="margin-top:6px;">${checklist || '<div class="muted">No checklist</div>'}</div>
+  </div>
+
+  <div class="box">
+    <strong>Notes</strong>
+    <div style="margin-top:6px; white-space: pre-wrap;">${escapeHtml(job.notes || '')}</div>
+  </div>
+
+  <div class="box">
+    <strong>Status History</strong>
+    <div style="margin-top:6px;">${history || '<div class="muted">No history</div>'}</div>
+  </div>
+</body>
+</html>`;
+    }
+
+    async function printJobCardToPrinter(){
+      if (!cardJob) return;
+      if (!window.api || typeof window.api.printJobCardToPrinter !== 'function'){
+        alert("Print API missing (preload/main not updated).");
+        return;
+      }
+      alert("Opening printer dialog...");
+      const html = buildPrintableJobHtml(cardJob);
+      const result = await window.api.printJobCardToPrinter({ html });
+      if (result?.success) alert("Print complete.");
+      else if (result?.error && result.error !== 'Cancelled') alert("Print failed: " + result.error);
+    }
+
+    // ---- Load jobs ----
+    async function loadJobs(){
+      const jobsRaw = await window.api.getJobs();
+      jobsCache = jobsRaw.map(j=>ensureJob(j));
+      renderAll();
+    }
+
+    // init
+    applyThemeFromStorage();
+    (async ()=>{
+      try{
+        if (!window.api) return showStatus('API Missing', 'preload bridge failed', 'window.api is undefined');
+        const p = await window.api.ping();
+        if (!p?.ok) return showStatus('IPC Error', '', 'ping failed');
+      }catch(err){
+        showStatus('IPC Error', '', String(err?.message || err));
+      }
+    })();
+    renderTypeFields();
+    fillStatusSelect(document.getElementById('statusSelect'), DEFAULT_PHASES[0]);
+    fillStatusSelect(document.getElementById('cardStatusSelect'), DEFAULT_PHASES[0]);
+    loadJobs();
+  
+    // Default to Customer view on startup
+    customerMode = true;
+    document.getElementById('btnCustomer')?.classList.add('active');
+    document.body.classList.remove('jobsOnly');
+    document.body.classList.remove('formCollapsed');
+    applyCustomerModeUI();
+</script>
+</body>
+</html>
