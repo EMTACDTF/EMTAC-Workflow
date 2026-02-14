@@ -1,11 +1,10 @@
 {
   "name": "emtac-workflow",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "description": "Simple Stable EMTAC Offline App",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "pack": "electron-builder --dir",
     "dist": "electron-builder"
   },
   "devDependencies": {
@@ -13,22 +12,30 @@
     "electron-builder": "^25.1.8"
   },
   "productName": "EMTAC WORKFLOW",
+  "dependencies": {
+    "electron-updater": "^6.6.2",
+    "electron-log": "^5.1.4"
+  },
   "build": {
     "appId": "com.emtac.workflow",
     "productName": "EMTAC WORKFLOW",
-    "mac": {
-      "category": "public.app-category.business",
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "build/icon.icns"
-    },
     "files": [
       "**/*"
     ],
     "directories": {
       "buildResources": "build"
-    }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "EMTACDTF",
+        "repo": "EMTAC-Workflow"
+      }
+    ]
   }
 }
