@@ -611,6 +611,51 @@ body.dark .syncDot{
   transform-origin: center center;
 }
 
+
+
+/* Sync log panel */
+.syncLogList{
+  height: 220px;
+  overflow:auto;
+  border-radius:14px;
+  border:1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.65);
+  padding:8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size:12px;
+  line-height:1.25rem;
+}
+body.dark .syncLogList{
+  border-color: rgba(255,255,255,.14);
+  background: rgba(0,0,0,.18);
+}
+.syncLogRow{
+  display:flex;
+  gap:10px;
+  padding:6px 8px;
+  border-radius:10px;
+}
+.syncLogRow + .syncLogRow{ margin-top:4px; }
+.syncLogTime{ opacity:.65; min-width:88px; }
+.syncLogTag{
+  min-width:92px;
+  font-weight:800;
+  opacity:.85;
+}
+.syncLogMsg{ flex:1; word-break:break-word; }
+.syncLogRow.info{ background: rgba(59,130,246,.10); }
+.syncLogRow.ok{ background: rgba(34,197,94,.10); }
+.syncLogRow.warn{ background: rgba(245,158,11,.12); }
+.syncLogRow.err{ background: rgba(239,68,68,.10); }
+
+
+
+
+.syncSep{ opacity:.45; padding:0 2px; }
+.syncClients{ opacity:.78; font-weight:800; }
+.syncClients #clientCount{ font-weight:900; }
+
+
 </style>
 </head>
 <body>
@@ -623,7 +668,7 @@ body.dark .syncDot{
           <div class="sub"><span id="appVersion" class="versionPill">v0.0.0</span>
           <div id="syncIndicator" class="syncIndicator disconnected" title="Live Sync status">
             <span class="syncDot"></span><span id="syncText">Disconnected</span>
-          </div></div>
+          <span class="syncSep">•</span><span class="syncClients">Clients: <span id="clientCount">0</span></span></div></div>
         </div>
       </div>
       <div class="actions">
@@ -969,6 +1014,31 @@ body.dark .syncDot{
         <label>Server IP</label>
         <input id="serverIpModal" placeholder="Server IP">
         
+
+<div style="margin-top:12px;">
+  <div class="muted" style="font-weight:800; margin-bottom:6px;">LAN Key (optional)</div>
+  <input id="lanKeyModal" type="text" placeholder="Shared secret for Windows + Mac (leave blank to disable)" style="width:100%;" />
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+    <button class="btn btnSmall chip" id="btnGenerateLanKey">Generate</button>
+    <button class="btn btnSmall chip" id="btnCopyLanKey">Copy</button>
+  </div>
+  <div class="muted" style="margin-top:6px; font-size:12px;">
+    If set, Windows must use the same key to sync jobs.
+  </div>
+</div>
+<div class="panel" id="syncLogPanel" style="margin-top:14px;">
+  <div class="panelTitle">
+    <h2>Sync Activity</h2>
+    <span class="muted"><span class="chip" id="syncLogCount">0</span></span>
+  </div>
+
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">
+    <button class="btn btnSmall chip" id="btnCopySyncLog">Copy</button>
+    <button class="btn btnSmall chip" id="btnClearSyncLog">Clear</button>
+  </div>
+
+  <div class="syncLogList" id="syncLogList" aria-label="Sync activity log" style="margin-top:10px;"></div>
+</div>
 
 <div class="panel" style="margin-top:14px;">
   <div class="panelTitle"><h2>Backup / Restore</h2><span class="muted">Protect your jobs & settings</span></div>
@@ -1331,7 +1401,8 @@ async function loadSettingsIntoUI(){
     const r = await window.api.getSettings();
     const s = (r && typeof r === 'object' && 'success' in r) ? (r.success ? (r.settings||{}) : {}) : (r || {});
     setServerIpValue(s?.serverIp || '');
-  }catch(e){
+        setLanKeyValue(s?.lanKey || '');
+}catch(e){
     console.warn('loadSettingsIntoUI failed', e);
   }
 }
@@ -1361,7 +1432,8 @@ async function restoreDatabase(){
     const r = await window.api.importDbBackup();
     if(r?.success){
       alert('Database restored. Jobs: ' + (r.jobsCount ?? ''));
-      await loadJobs();
+      addSyncLog('info','POLL','Refresh');
+          await loadJobs();
     }else if(r?.error && r.error !== 'Cancelled'){
       alert('Restore failed: ' + r.error);
     }
@@ -1511,13 +1583,12 @@ async function refreshAppVersion(){
   
     function showToast(msg){ alert(msg); }
 
-// ---- Live Sync: WebSocket push + auto reconnect + status indicator ----
+  
+
+// ---- Live Sync: auto reconnect + status indicator ----
 let __syncConnected = false;
 let __syncTimer = null;
-let __ws = null;
-let __wsBackoff = 1000; // start 1s
-let __wsReconnectTimer = null;
-let __fallbackRefreshTimer = null;
+let __jobsPollTimer = null;
 
 function setSyncStatus(state){
   const el = document.getElementById('syncIndicator');
@@ -1528,122 +1599,65 @@ function setSyncStatus(state){
   if(state === 'connected') txt.textContent = 'Connected';
   else if(state === 'connecting') txt.textContent = 'Connecting…';
   else txt.textContent = 'Disconnected';
-}
 
-function getServerIpFromUI(){
-  const el = document.getElementById('serverIpModal') || document.getElementById('serverIp');
-  return el ? (el.value || '').trim() : '';
-}
-
-function stopWs(){
-  try{ if(__ws){ __ws.onopen = __ws.onclose = __ws.onerror = __ws.onmessage = null; __ws.close(); } }catch{}
-  __ws = null;
-}
-
-function scheduleWsReconnect(){
-  if(__wsReconnectTimer) return;
-  __wsReconnectTimer = setTimeout(async ()=>{
-    __wsReconnectTimer = null;
-    await connectWs();
-  }, __wsBackoff);
-  __wsBackoff = Math.min(__wsBackoff * 1.6, 15000); // cap 15s
-}
-
-async function connectWs(){
-  stopWs();
-  const ip = getServerIpFromUI();
-  if(!ip){
-    __syncConnected = false;
-    setSyncStatus('disconnected');
-    return;
+try{
+  if(state !== __lastSyncState){
+    __lastSyncState = state;
+    if(state === 'connected') addSyncLog('ok','SYNC','Connected');
+    else if(state === 'connecting') addSyncLog('info','SYNC','Connecting…');
+    else addSyncLog('warn','SYNC','Disconnected');
   }
+}catch{}
 
-  setSyncStatus('connecting');
-
-  // Quick ping to validate server before WS connect
-  try{
-    if(window.api && typeof window.api.pingServer === 'function'){
-      const r = await window.api.pingServer();
-      const ok = !!(r && (r.success === true || r.health?.ok === true));
-      if(!ok){
-        __syncConnected = false;
-        setSyncStatus('disconnected');
-        scheduleWsReconnect();
-        return;
-      }
     }
-  }catch{
-    __syncConnected = false;
-    setSyncStatus('disconnected');
-    scheduleWsReconnect();
-    return;
-  }
 
-  const url = `ws://${ip}:3030/ws`;
+async function checkServerOnce(){
   try{
-    __ws = new WebSocket(url);
+    if(!window.api || typeof window.api.pingServer !== 'function'){
+      // No LAN feature available
+      setSyncStatus('disconnected');
+      __syncConnected = false;
+      return false;
+    }
+    const r = await window.api.pingServer();
+    const ok = !!(r && (r.success === true || r.ok === true || r.health?.ok === true));
+    return ok;
   }catch{
-    __syncConnected = false;
-    setSyncStatus('disconnected');
-    scheduleWsReconnect();
-    return;
+    return false;
   }
+}
 
-  __ws.onopen = async () => {
-    __wsBackoff = 1000;
-    __syncConnected = true;
-    setSyncStatus('connected');
-    try{ showToast('Live sync connected ✓'); }catch{}
-    try{ await loadJobs(); }catch{}
-  };
-
-  __ws.onmessage = async (ev) => {
+function startJobsPolling(){
+  // Light polling so Mac-added jobs appear without restart.
+  if(__jobsPollTimer) return;
+  __jobsPollTimer = setInterval(async ()=>{
+    if(!__syncConnected) return;
     try{
-      const msg = JSON.parse(ev.data);
-      if(msg?.type === 'jobs-changed'){
-        if(!window.__jobsRefreshSoon){
-          window.__jobsRefreshSoon = true;
-          setTimeout(async ()=>{
-            window.__jobsRefreshSoon = false;
-            try{ await loadJobs(); }catch{}
-          }, 250);
-        }
-      }
+      await loadJobs();
     }catch{}
-  };
+  }, 8000);
+}
 
-  __ws.onclose = () => {
-    __syncConnected = false;
-    setSyncStatus('disconnected');
-    try{ showToast('Live sync disconnected'); }catch{}
-    scheduleWsReconnect();
-  };
-
-  // Safety refresh every 60s
-  if(!__fallbackRefreshTimer){
-    __fallbackRefreshTimer = setInterval(async ()=>{
-      if(__syncConnected){
-        try{ await loadJobs(); }catch{}
-      }
-    }, 60000);
+function stopJobsPolling(){
+  if(__jobsPollTimer){
+    clearInterval(__jobsPollTimer);
+    __jobsPollTimer = null;
   }
 }
 
 async function startAutoReconnect(){
   if(__syncTimer) return;
-  await connectWs();
-  __syncTimer = setInterval(async ()=>{
-    if(__ws && __ws.readyState === 1){
-      __syncConnected = true;
-      setSyncStatus('connected');
-      return;
-    }
-    if(!__wsReconnectTimer){
-      await connectWs();
-    }
-  }, 5000);
-}
-
+  setSyncStatus('connecting');
+  // First immediate check
+  const firstOk = await checkServerOnce();
+  if(firstOk){
+    __syncConnected = true;
+    setSyncStatus('connected');
+    startJobsPolling();
+  }else{
+    __syncConnected = false;
+    setSyncStatus('disconnected');
+  }
 
   __syncTimer = setInterval(async ()=>{
     const ok = await checkServerOnce();
@@ -3001,6 +3015,11 @@ function openSettings(){
     fillStatusSelect(document.getElementById('statusSelect'), DEFAULT_PHASES[0]);
     fillStatusSelect(document.getElementById('cardStatusSelect'), DEFAULT_PHASES[0]);
     refreshAppVersion();
+    setupSyncLogUI();
+    setupClientCountListener();
+    refreshClientCount();
+    setInterval(refreshClientCount, 10000);
+    addSyncLog('info','SYNC','Init');
     loadSettingsIntoUI();
     startAutoReconnect();
     loadJobs();
@@ -3010,6 +3029,147 @@ function openSettings(){
     document.body.classList.remove('jobsOnly');
     document.body.classList.remove('formCollapsed');
     applyCustomerModeUI();
+
+
+// ---- Sync log: helpers ----
+const __syncLog = [];
+const __syncLogMax = 200;
+let __lastSyncState = 'disconnected';
+
+function fmtTime(ts){
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  const ss = String(d.getSeconds()).padStart(2,'0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+function addSyncLog(level, tag, msg){
+  try{
+    const entry = { ts: Date.now(), level, tag, msg: String(msg || '') };
+    __syncLog.unshift(entry);
+    if(__syncLog.length > __syncLogMax) __syncLog.length = __syncLogMax;
+
+    const list = document.getElementById('syncLogList');
+    const count = document.getElementById('syncLogCount');
+    if(count) count.textContent = String(__syncLog.length);
+
+    if(list){
+      const row = document.createElement('div');
+      row.className = `syncLogRow ${level}`;
+      row.innerHTML = `
+        <div class="syncLogTime">${fmtTime(entry.ts)}</div>
+        <div class="syncLogTag">${tag}</div>
+        <div class="syncLogMsg"></div>
+      `;
+      row.querySelector('.syncLogMsg').textContent = entry.msg;
+      list.prepend(row);
+      while(list.children.length > __syncLogMax) list.removeChild(list.lastChild);
+    }
+  }catch{}
+}
+
+function clearSyncLog(){
+  __syncLog.length = 0;
+  const list = document.getElementById('syncLogList');
+  const count = document.getElementById('syncLogCount');
+  if(list) list.innerHTML = '';
+  if(count) count.textContent = '0';
+  addSyncLog('info','LOG','Cleared');
+}
+
+async function copySyncLog(){
+  const lines = __syncLog.slice().reverse().map(e => `[${fmtTime(e.ts)}] ${e.tag}: ${e.msg}`);
+  const text = lines.join('\n');
+  try{
+    await navigator.clipboard.writeText(text);
+    showToast('Sync log copied ✓');
+  }catch{
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      showToast('Sync log copied ✓');
+    }catch{
+      alert('Could not copy log.');
+    }
+  }
+}
+
+
+
+function setLanKeyValue(v){
+  const el = document.getElementById('lanKeyModal');
+  if(el) el.value = v || '';
+}
+
+function generateLanKey(){
+  // 24 chars base36
+  const s = Array.from(crypto.getRandomValues(new Uint32Array(6))).map(n=>n.toString(36).padStart(4,'0')).join('').slice(0,24);
+  setLanKeyValue(s);
+  try{ addSyncLog('info','KEY','Generated'); }catch{}
+  try{ showToast('LAN key generated'); }catch{}
+}
+
+async function copyLanKey(){
+  const el = document.getElementById('lanKeyModal');
+  const v = (el?.value || '').trim();
+  if(!v){ alert('LAN key is blank.'); return; }
+  try{
+    await navigator.clipboard.writeText(v);
+    showToast('LAN key copied ✓');
+  }catch{
+    alert('Could not copy key.');
+  }
+}
+
+
+function setupSyncLogUI(){
+  try{
+    const btnClear = document.getElementById('btnClearSyncLog');
+    const btnCopy = document.getElementById('btnCopySyncLog');
+    if(btnClear) btnClear.addEventListener('click', clearSyncLog);
+    if(btnCopy) btnCopy.addEventListener('click', copySyncLog);
+  }catch{}
+
+const btnGen = document.getElementById('btnGenerateLanKey');
+const btnCopyKey = document.getElementById('btnCopyLanKey');
+if(btnGen) btnGen.addEventListener('click', generateLanKey);
+if(btnCopyKey) btnCopyKey.addEventListener('click', copyLanKey);
+
+}
+
+
+
+
+// ---- Client count: master display ----
+async function refreshClientCount(){
+  try{
+    if(!window.api || typeof window.api.getClientInfo !== 'function') return;
+    const r = await window.api.getClientInfo();
+    const count = (r && r.success) ? (r.count||0) : 0;
+    const el = document.getElementById('clientCount');
+    if(el) el.textContent = String(count);
+  }catch{}
+}
+
+function setupClientCountListener(){
+  try{
+    if(window.api && typeof window.api.onLanClients === 'function'){
+      window.api.onLanClients((payload)=>{
+        const el = document.getElementById('clientCount');
+        const count = payload?.count ?? 0;
+        if(el) el.textContent = String(count);
+        try{ addSyncLog('info','CLIENTS', `Connected: ${count}`); }catch{}
+      });
+    }
+  }catch{}
+}
+
+
 </script>
 </body>
 </html>

@@ -32,5 +32,7 @@ contextBridge.exposeInMainWorld('api', {
   // Updates
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
-  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, data) => cb(data))
+  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, data) => cb(data)),
+  getClientInfo: () => ipcRenderer.invoke('get-client-info'),
+  onLanClients: (callback) => ipcRenderer.on('lan-clients', (_e, payload) => callback(payload))
 });

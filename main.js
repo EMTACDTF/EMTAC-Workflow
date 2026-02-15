@@ -27,7 +27,6 @@ const path = require('path');
 const fs = require('fs');
 
 const http = require('http');
-const WebSocket = require('ws');
 const { URL } = require('url');
 let lanServer = null;
 let mainWindow;
@@ -72,6 +71,19 @@ function saveDb(db) {
   writeJsonSafe(dbPath, db);
 }
 
+
+
+safeRemoveHandler('get-client-info');
+ipcMain.handle('get-client-info', async () => {
+  try{
+    // Only meaningful on master (non-win32). Windows clients return 0.
+    if(process.platform === 'win32') return { success:true, count:0, clients:[] };
+    cleanupLanClients();
+    return { success:true, count: lanClients.size, clients: Array.from(lanClients.entries()).map(([ip,lastSeen])=>({ip,lastSeen})) };
+  }catch(e){
+    return { success:false, count:0, clients:[], error:String(e?.message||e) };
+  }
+});
 
 safeRemoveHandler('get-settings');
 ipcMain.handle('get-settings', async () => {
@@ -140,17 +152,50 @@ function json(res, code, obj){
 }
 
 
-// ---- LAN WebSocket push (Mac master -> clients) ----
-let wsServer = null;
-const wsClients = new Set();
+// ---- LAN client tracking (master) ----
+const lanClients = new Map(); // ip -> lastSeenMs
+let lanClientsLastEmit = 0;
+let lanClientsLastCount = 0;
 
-function wsBroadcast(obj){
+function normalizeIp(raw){
+  if(!raw) return 'unknown';
+  const s = String(raw);
+  const m = s.match(/::ffff:(\d+\.\d+\.\d+\.\d+)/);
+  return m ? m[1] : s;
+}
+
+function touchLanClient(req){
   try{
-    const msg = JSON.stringify(obj);
-    for(const c of wsClients){
-      try{
-        if(c.readyState === WebSocket.OPEN) c.send(msg);
-      }catch{}
+    const ip = normalizeIp(req?.socket?.remoteAddress || req?.connection?.remoteAddress);
+    if(!ip) return;
+    lanClients.set(ip, Date.now());
+    emitLanClientsIfNeeded();
+  }catch{}
+}
+
+function cleanupLanClients(){
+  try{
+    const now = Date.now();
+    let changed = false;
+    for(const [ip, ts] of lanClients.entries()){
+      if(now - ts > 120000){ // 2 min
+        lanClients.delete(ip);
+        changed = true;
+      }
+    }
+    if(changed) emitLanClientsIfNeeded(true);
+  }catch{}
+}
+
+function emitLanClientsIfNeeded(force=false){
+  try{
+    const now = Date.now();
+    const count = lanClients.size;
+    if(!force && count === lanClientsLastCount && (now - lanClientsLastEmit) < 2000) return;
+    lanClientsLastCount = count;
+    lanClientsLastEmit = now;
+    if(mainWindow && !mainWindow.isDestroyed()){
+      mainWindow.webContents.send('lan-clients', { count, clients: Array.from(lanClients.entries()).map(([ip,lastSeen])=>({ip,lastSeen})) });
     }
   }catch{}
 }
@@ -160,6 +205,19 @@ function startLanServer(getMainWindow){
   if (process.platform !== 'darwin') return null;
 
   const server = http.createServer(async (req, res) => {
+    touchLanClient(req);
+
+// Auth: if a LAN key is configured, require it for jobs endpoints
+const urlObj = new URL(req.url, 'http://localhost');
+const pathname = urlObj.pathname || '';
+const needsAuth = (pathname.startsWith('/jobs') || pathname.startsWith('/db'));
+if(needsAuth && !isAuthorizedLanRequest(req)){
+  res.writeHead(401, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error:'Unauthorized' }));
+  try{ console.warn('[LAN] Unauthorized request from', req?.socket?.remoteAddress, pathname); }catch{}
+  return;
+}
+
     try{
       if(req.method === 'OPTIONS'){
         res.writeHead(204, {
@@ -202,7 +260,6 @@ function startLanServer(getMainWindow){
           const win = getMainWindow?.();
           if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'add', id: job.id });
         }catch{}
-        try{ wsBroadcast({ type:'jobs-changed', action:'add', id: job.id, ts: Date.now() }); }catch{}
 
         return json(res, 200, { ok:true, job });
       }
@@ -222,7 +279,6 @@ function startLanServer(getMainWindow){
             const win = getMainWindow?.();
             if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'delete', id });
           }catch{}
-        try{ wsBroadcast({ type:'jobs-changed', action:'delete', id, ts: Date.now() }); }catch{}
           return json(res, 200, { ok:true, removedId: id });
         }
 
@@ -240,7 +296,6 @@ function startLanServer(getMainWindow){
           const win = getMainWindow?.();
           if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'update', id });
         }catch{}
-        try{ wsBroadcast({ type:'jobs-changed', action:'update', id, ts: Date.now() }); }catch{}
 
         return json(res, 200, { ok:true, job: updated });
       }
@@ -250,20 +305,6 @@ function startLanServer(getMainWindow){
       return json(res, 500, { ok:false, error:String(e?.message || e) });
     }
   });
-
-// Attach WebSocket server on the same port/path for real-time push
-if(!wsServer){
-  wsServer = new WebSocket.Server({ server, path: '/ws' });
-  wsServer.on('connection', (socket) => {
-    wsClients.add(socket);
-    try{
-      socket.send(JSON.stringify({ type:'hello', role:'master', version: app.getVersion(), time: Date.now() }));
-    }catch{}
-    socket.on('close', ()=> wsClients.delete(socket));
-    socket.on('error', ()=> wsClients.delete(socket));
-  });
-}
-
 
   server.on('error', (e)=>{ console.error('[LAN] Server error', e); });
 
@@ -278,6 +319,7 @@ if(!wsServer){
 async function remoteFetch(path, options = {}){
   const s = loadSettings();
   const serverIp = s?.serverIp;
+  const lanKey = s?.lanKey;
   if(!serverIp) throw new Error('Server IP not set (Settings → Server IP)');
   const method = (options.method || 'GET').toUpperCase();
   const body = options.body || null;
@@ -288,7 +330,8 @@ async function remoteFetch(path, options = {}){
   if (typeof globalThis.fetch === 'function'){
     const res = await fetch(url.toString(), {
       method,
-      headers: { 'Content-Type':'application/json', ...(options.headers||{}) },
+      headers: {
+      ...(lanKey ? { 'X-EMTAC-KEY': String(lanKey) } : {}), 'Content-Type':'application/json', ...(options.headers||{}) },
       body
     });
     const jsonBody = await res.json().catch(()=>null);
@@ -333,6 +376,32 @@ function isClientMode(){
   return !!s?.serverIp;
 }
 
+
+
+// ---- LAN auth key (optional) ----
+function getLanKey(){
+  try{
+    const s = loadSettings();
+    const k = s?.lanKey;
+    return (k && String(k).trim().length > 0) ? String(k).trim() : null;
+  }catch{
+    return null;
+  }
+}
+
+function isAuthorizedLanRequest(req){
+  try{
+    const configured = getLanKey();
+    if(!configured) return true; // backward-compatible: no key set = allow
+    const headerKey = req?.headers?.['x-emtac-key'] || req?.headers?.['X-EMTAC-KEY'];
+    const url = new URL(req.url, 'http://localhost');
+    const queryKey = url.searchParams.get('key');
+    const provided = (headerKey || queryKey || '').toString().trim();
+    return provided && provided === configured;
+  }catch{
+    return false;
+  }
+}
 
 function loadSettings() {
   const { settingsPath } = dataPaths();
@@ -728,7 +797,6 @@ ipcMain.handle('add-job', async (_e, job) => {
     newJob.updatedAt = Date.now();
     db.jobs.unshift(newJob);
     saveDb(db);
-    try{ wsBroadcast({ type:'jobs-changed', action:'add', id: newJob.id, ts: Date.now() }); }catch{}
     return { success:true, job: newJob };
   }catch(e){
     return { success:false, error:String(e?.message||e) };
@@ -748,7 +816,6 @@ ipcMain.handle('update-job', async (_e, id, patch) => {
     if(idx === -1) return { success:false, error:'Job not found' };
     db.jobs[idx] = { ...db.jobs[idx], ...patch, id: db.jobs[idx].id, updatedAt: Date.now() };
     saveDb(db);
-    try{ wsBroadcast({ type:'jobs-changed', action:'update', id, ts: Date.now() }); }catch{}
     return { success:true, job: db.jobs[idx] };
   }catch(e){
     return { success:false, error:String(e?.message||e) };
@@ -769,7 +836,6 @@ ipcMain.handle('delete-job', async (_e, id) => {
     if(idx === -1) return { success:false, error:'Job not found' };
     db.jobs.splice(idx, 1);
     saveDb(db);
-    try{ wsBroadcast({ type:'jobs-changed', action:'delete', id, ts: Date.now() }); }catch{}
     return { success:true, removedId: id };
   }catch(e){
     return { success:false, error:String(e?.message||e) };
