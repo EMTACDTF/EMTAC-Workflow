@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('api', {
   // Settings
   getSettings: async () => {
     const r = await ipcRenderer.invoke('get-settings');
+    // main.js returns settings object directly; keep backward compat just in case
     if(r && typeof r === 'object' && 'success' in r) return r.success ? (r.settings || {}) : {};
     return r || {};
   },

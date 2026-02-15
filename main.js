@@ -1,6 +1,13 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 
 
+
+
+// Safely replace IPC handlers (prevents duplicate registration in dev/hot reload scenarios)
+function safeRemoveHandler(channel){
+  try{ ipcMain.removeHandler(channel); }catch{}
+}
+
 // ---- Safety: log (and avoid blank app) on unexpected async errors ----
 process.on('unhandledRejection', (reason) => {
   console.error('[UNHANDLED REJECTION]', reason);
@@ -63,6 +70,45 @@ function saveDb(db) {
   const { dbPath } = dataPaths();
   writeJsonSafe(dbPath, db);
 }
+
+
+safeRemoveHandler('get-settings');
+ipcMain.handle('get-settings', async () => {
+  try{
+    const s = loadSettings();
+    return s || {};
+  }catch(e){
+    console.error('[settings] get failed', e);
+    return {};
+  }
+});
+
+
+safeRemoveHandler('save-settings');
+ipcMain.handle('save-settings', async (_e, settings) => {
+  try{
+    const current = loadSettings();
+    const merged = { ...(current||{}), ...(settings||{}) };
+    saveSettings(merged);
+    const { settingsPath } = dataPaths();
+    console.log('[settings] saved', merged, '->', settingsPath);
+    return { success:true };
+  }catch(e){
+    console.error('[settings] save failed', e);
+    return { success:false, error:String(e?.message||e) };
+  }
+});
+
+
+safeRemoveHandler('ping-server');
+ipcMain.handle('ping-server', async ()=>{
+  try{
+    const health = await remoteFetch('/health');
+    return { success:true, health };
+  }catch(e){
+    return { success:false, error:String(e?.message||e) };
+  }
+});
 
 /* ---------------------------
    LAN LIVE SYNC (Mac = Master DB, Windows = Client)
@@ -252,24 +298,6 @@ function isClientMode(){
   const s = loadSettings();
   return !!s?.serverIp;
 }
-
-function notifyLanErrorOnce(message){
-  try{
-    const now = Date.now();
-    if(now - lastLanErrorAt < 15000) return; // throttle
-    lastLanErrorAt = now;
-    if(process.platform === 'win32'){
-      const ip = (loadSettings()?.serverIp) || '192.168.3.149';
-      dialog.showErrorBox('EMTAC Live Sync Error',
-        message + '\n\nCheck: Is the Mac app running? Can you open http://' + ip + ':3030/health in your browser?');
-    } else {
-      console.error('[LAN ERROR]', message);
-    }
-  }catch(e){
-    console.error('[LAN ERROR notify failed]', e);
-  }
-}
-
 
 
 function loadSettings() {
@@ -613,6 +641,7 @@ ipcMain.handle('import-settings-backup', async () => {
 /* ---------------------------
    APP LIFECYCLE
 ---------------------------- */
+console.log('[STABLE] EMTAC WORKFLOW v1.1.0 starting');
 app.whenReady().then(() => {
   // Optional diagnostics (disabled)
   // const info = { ...dataPaths(), userData: app.getPath('userData') };
@@ -634,25 +663,22 @@ app.on('window-all-closed', () => {
 ---------------------------- */
 ipcMain.handle('ping', async () => ({ ok: true, ts: nowIso(), userData: app.getPath('userData') }));
 
-
-ipcMain.removeHandler('get-jobs');
+safeRemoveHandler('get-jobs');
 ipcMain.handle('get-jobs', async () => {
   try{
-    const s = loadSettings();
-    const serverIp = s?.serverIp;
-    if(process.platform === 'win32' && serverIp){
+    if(isClientMode()){
       const r = await remoteFetch('/jobs');
       return Array.isArray(r?.jobs) ? r.jobs : [];
     }
     const db = loadDb();
     return Array.isArray(db.jobs) ? db.jobs : [];
   }catch(e){
-    notifyLanErrorOnce('Could not load jobs from Mac: ' + String(e?.message||e));
+    console.error('[get-jobs] failed', e);
     return [];
   }
 });
 
-ipcMain.removeHandler('add-job');
+safeRemoveHandler('add-job');
 ipcMain.handle('add-job', async (_e, job) => {
   try{
     if(isClientMode()){
@@ -670,12 +696,11 @@ ipcMain.handle('add-job', async (_e, job) => {
     saveDb(db);
     return { success:true, job: newJob };
   }catch(e){
-    notifyLanErrorOnce('Could not add job to Mac: ' + String(e?.message||e));
     return { success:false, error:String(e?.message||e) };
   }
 });
 
-ipcMain.removeHandler('update-job');
+safeRemoveHandler('update-job');
 ipcMain.handle('update-job', async (_e, id, patch) => {
   try{
     if(isClientMode()){
@@ -690,13 +715,12 @@ ipcMain.handle('update-job', async (_e, id, patch) => {
     saveDb(db);
     return { success:true, job: db.jobs[idx] };
   }catch(e){
-    notifyLanErrorOnce('Could not update job on Mac: ' + String(e?.message||e));
     return { success:false, error:String(e?.message||e) };
   }
 });
 
 
-ipcMain.removeHandler('delete-job');
+safeRemoveHandler('delete-job');
 ipcMain.handle('delete-job', async (_e, id) => {
   try{
     if(isClientMode()){
@@ -711,7 +735,6 @@ ipcMain.handle('delete-job', async (_e, id) => {
     saveDb(db);
     return { success:true, removedId: id };
   }catch(e){
-    notifyLanErrorOnce('Could not delete job on Mac: ' + String(e?.message||e));
     return { success:false, error:String(e?.message||e) };
   }
 });
@@ -719,46 +742,6 @@ ipcMain.handle('delete-job', async (_e, id) => {
 /* ---------------------------
    SETTINGS IPC
 ---------------------------- */
-
-ipcMain.removeHandler('ping-server');
-ipcMain.handle('ping-server', async ()=>{
-  try{
-    const r = await remoteFetch('/health');
-    return { success:true, health:r };
-  }catch(e){
-    notifyLanErrorOnce('Could not reach Mac server: ' + String(e?.message||e));
-    return { success:false, error:String(e?.message||e) };
-  }
-});
-
-
-ipcMain.removeHandler('get-settings');
-ipcMain.handle('get-settings', async () => {
-  try{
-    const s = loadSettings();
-    const { settingsPath } = dataPaths();
-    return { success:true, settings:s, settingsPath };
-  }catch(e){
-    return { success:false, error:String(e?.message||e) };
-  }
-});
-
-
-
-ipcMain.removeHandler('save-settings');
-ipcMain.handle('save-settings', async (_e, settings) => {
-  try{
-    const current = loadSettings();
-    const merged = { ...(current||{}), ...(settings||{}) };
-    saveSettings(merged);
-    const { settingsPath } = dataPaths();
-    console.log('[settings] saved', merged, '->', settingsPath);
-    return { success:true, settings: merged, settingsPath };
-  }catch(e){
-    console.error('[settings] save failed', e);
-    return { success:false, error:String(e?.message||e) };
-  }
-});
 
 /* ---------------------------
    EXPORT PDF (printToPDF)

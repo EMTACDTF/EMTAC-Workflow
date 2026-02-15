@@ -587,6 +587,30 @@ body.dark .syncDot{
 .syncIndicator.connecting .syncDot{ background: #f59e0b; } /* amber */
 
 
+
+
+/* Header icon (app icon) */
+.logo{
+  width: 38px;
+  height: 38px;
+  padding: 0 !important;
+  background: none !important;
+  border-radius: 12px;
+  overflow: hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex: 0 0 38px;
+}
+.logoImg{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display:block;
+  transform: scale(1.28); /* remove transparent padding */
+  transform-origin: center center;
+}
+
 </style>
 </head>
 <body>
@@ -1299,26 +1323,14 @@ function wireDraftAutosave(){
 
 
 
-async function apiGetSettingsSafe(){
-  try{
-    if(!window.api || typeof window.api.getSettings !== 'function') return {};
-    const r = await window.api.getSettings();
-    if(r && typeof r === 'object' && 'success' in r){
-      return r.success ? (r.settings || {}) : {};
-    }
-    return r || {};
-  }catch(e){
-    console.warn('apiGetSettingsSafe failed', e);
-    return {};
-  }
-}
+
 
 async function loadSettingsIntoUI(){
   try{
     if(!window.api || typeof window.api.getSettings !== 'function') return;
-    const s = await apiGetSettingsSafe();
-    const ipEl = document.getElementById('serverIp');
-    if(ipEl) ipEl.value = (s?.serverIp || '');
+    const r = await window.api.getSettings();
+    const s = (r && typeof r === 'object' && 'success' in r) ? (r.success ? (r.settings||{}) : {}) : (r || {});
+    setServerIpValue(s?.serverIp || '');
   }catch(e){
     console.warn('loadSettingsIntoUI failed', e);
   }
