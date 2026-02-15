@@ -430,6 +430,8 @@
 
         <label>Customer Email</label>
         <input id="customerEmail" placeholder="optional@email.com">
+        <div class="muted" id="draftStatus" style="margin:6px 0 10px 0; display:none;"></div>
+
 
         <label>Description</label>
         <input id="description" placeholder="Description">
@@ -523,6 +525,7 @@
         <div class="rowInline" style="margin-top:12px;">
           <button class="btn btnPrimary" id="saveBtn" onclick="saveJob()">Add Job</button>
         <button class="btn btnPrimary" id="saveNewBtn" onclick="saveJob(true)" style="display:none;">✅ Save & New</button>
+          <button class="btn" id="clearDraftBtn" onclick="clearJobDraft()" title="Clear saved draft">🧹 Clear Draft</button>
           <button class="btn" id="cancelEditBtn" onclick="cancelEdit()" style="display:none;">Cancel Edit</button>
         <label class="chip" id="autoPrintWrap" style="display:none; margin-left:10px;"><input type="checkbox" id="autoPrintAfterSave"> Auto print</label>
         </div>
@@ -845,7 +848,130 @@
       }
     }
     
-// ---- Updates UI ----
+
+
+// ---- Draft Auto-Save (New Job Form) ----
+const DRAFT_KEY = 'emtac_job_draft_v1';
+
+function getElVal(id){
+  const el = document.getElementById(id);
+  if(!el) return null;
+  if(el.type === 'checkbox') return !!el.checked;
+  return el.value ?? '';
+}
+
+function setElVal(id, v){
+  const el = document.getElementById(id);
+  if(!el) return;
+  if(el.type === 'checkbox') el.checked = !!v;
+  else el.value = (v ?? '');
+}
+
+function collectJobDraft(){
+  // Only fields in the "Add Job" form
+  const ids = [
+    'jobType',
+    'customerName','customerPhone','customerEmail',
+    'description','dueDate','priority','statusSelect','quantity',
+    // DTF
+    'dtf_size','dtf_filmLength','dtf_colourCount','dtf_material','dtf_press','dtf_cutLines',
+    // Embroidery
+    'emb_stitchCount','emb_threadColors','emb_position','emb_backing','emb_applique'
+  ];
+  const d = {};
+  for(const id of ids){
+    const v = getElVal(id);
+    if(v !== null) d[id] = v;
+  }
+  d._savedAt = Date.now();
+  return d;
+}
+
+function applyJobDraft(d){
+  if(!d || typeof d !== 'object') return false;
+  for(const [id, v] of Object.entries(d)){
+    if(id === '_savedAt') continue;
+    setElVal(id, v);
+  }
+  // Ensure type sections visibility matches jobType
+  try{ renderTypeFields(); }catch{}
+  return true;
+}
+
+function showDraftStatus(msg, ms=3000){
+  const el = document.getElementById('draftStatus');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  if(ms){
+    setTimeout(()=>{
+      // Only hide if message hasn't been replaced
+      if(el.textContent === msg) el.style.display = 'none';
+    }, ms);
+  }
+}
+
+function saveJobDraftNow(){
+  try{
+    const d = collectJobDraft();
+    // Don't save completely empty drafts (keeps storage clean)
+    const meaningful = Object.entries(d).some(([k,v]) => k !== '_savedAt' && String(v).trim() !== '' && v !== false);
+    if(!meaningful) return;
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    // Small unobtrusive feedback
+    showDraftStatus('Draft saved ✓', 1200);
+  }catch(e){
+    console.warn('Draft save failed', e);
+  }
+}
+
+function loadJobDraft(){
+  try{
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if(!raw) return false;
+    const d = JSON.parse(raw);
+    const ok = applyJobDraft(d);
+    if(ok){
+      const when = d?._savedAt ? new Date(d._savedAt).toLocaleString() : '';
+      showDraftStatus(when ? `Draft restored (${when})` : 'Draft restored', 4000);
+      return true;
+    }
+  }catch(e){
+    console.warn('Draft load failed', e);
+  }
+  return false;
+}
+
+function clearJobDraft(){
+  try{
+    localStorage.removeItem(DRAFT_KEY);
+    showDraftStatus('Draft cleared', 2000);
+  }catch(e){}
+}
+
+function wireDraftAutosave(){
+  const ids = [
+    'jobType',
+    'customerName','customerPhone','customerEmail',
+    'description','dueDate','priority','statusSelect','quantity',
+    'dtf_size','dtf_filmLength','dtf_colourCount','dtf_material','dtf_press','dtf_cutLines',
+    'emb_stitchCount','emb_threadColors','emb_position','emb_backing','emb_applique'
+  ];
+  let t = null;
+  const schedule = ()=>{
+    if(t) clearTimeout(t);
+    t = setTimeout(saveJobDraftNow, 600);
+  };
+  for(const id of ids){
+    const el = document.getElementById(id);
+    if(!el) continue;
+    el.addEventListener('input', schedule);
+    el.addEventListener('change', schedule);
+  }
+}
+
+
+  // ---- Updates UI ----
 function setUpdateChip(text, show=true){
   const chip = document.getElementById('updateStatusChip');
   const t = document.getElementById('updateStatusText');
@@ -1420,7 +1546,8 @@ function bindUpdateStatus(){
             return;
           }
           await loadJobs();
-// ---- Display App Version ----
+clearJobDraft();
+      // ---- Display App Version ----
 (async function showVersion(){
   try{
     if(window.api && typeof window.api.getVersion === "function"){
@@ -1529,6 +1656,8 @@ function bindUpdateStatus(){
 
       document.getElementById('jobType').value = job.type || 'DTF';
       bindUpdateStatus();
+    loadJobDraft();
+    wireDraftAutosave();
     renderTypeFields();
 
       document.getElementById('customerName').value = job.customerName ?? '';
