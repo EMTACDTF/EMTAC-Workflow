@@ -1,6 +1,6 @@
 {
   "name": "emtac-workflow",
-  "version": "1.0.9",
+  "version": "1.0.14",
   "description": "Simple Stable EMTAC Offline App",
   "main": "main.js",
   "scripts": {
@@ -8,11 +8,17 @@
     "dist": "electron-builder",
     "clean": "node scripts/clean.js",
     "build:mac": "npm run clean && electron-builder --mac",
-    "build:win": "npm run clean && electron-builder --win",
+    "build:win": "npm run clean && electron-builder --win --x64",
     "build:all": "npm run clean && electron-builder -mwl",
     "publish:mac": "npm run clean && electron-builder --mac --publish always",
-    "publish:win": "npm run clean && electron-builder --win --publish always",
-    "publish:all": "npm run clean && electron-builder -mwl --publish always"
+    "publish:win": "npm run clean && electron-builder --win --x64 --publish always",
+    "publish:all": "npm run clean && electron-builder -mwl --publish always",
+    "bump:patch": "npm version patch --no-git-tag-version",
+    "bump:minor": "npm version minor --no-git-tag-version",
+    "bump:major": "npm version major --no-git-tag-version",
+    "release:win": "npm run bump:patch && npm run publish:win",
+    "release:mac": "npm run bump:patch && npm run publish:mac",
+    "release:all": "npm run bump:patch && npm run publish:all"
   },
   "devDependencies": {
     "electron": "^28.0.0",
@@ -34,7 +40,12 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "publish": [

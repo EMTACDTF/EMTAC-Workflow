@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 
@@ -64,7 +64,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-
 function getNextJobNumber(db){
   const PREFIX = "EM-";
   const START = 2313; // EM-02313
@@ -92,10 +91,14 @@ function makeId() {
   return 'job_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 }
 
-function ensureNumber(n, fieldName) {
-  if (typeof n !== 'number' || Number.isNaN(n)) {
-    throw new Error(`${fieldName} must be a number`);
+function ensureNumberLike(value, fieldName, { allowBlank = false, defaultValue = 0 } = {}) {
+  // Accept numbers or numeric strings; optionally allow blank/undefined.
+  if (value === undefined || value === null || value === '') {
+    if (allowBlank) return defaultValue;
+    throw new Error(`${fieldName} is required`);
   }
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new Error(`${fieldName} must be a number`);
   return n;
 }
 
@@ -107,7 +110,8 @@ function validateJob(job) {
 
   if (!job.description || typeof job.description !== 'string') throw new Error('Description is required');
 
-  ensureNumber(job.quantity, 'quantity');
+  // Quantity: allow blank/undefined; default to 1.
+  job.quantity = ensureNumberLike(job.quantity, 'quantity', { allowBlank: true, defaultValue: 1 });
 
   if (job.dueDate && typeof job.dueDate !== 'string') throw new Error('dueDate must be a string');
   if (job.priority && typeof job.priority !== 'string') throw new Error('priority must be a string');
@@ -132,58 +136,70 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  // Wire updater events + check on startup
+  setupAutoUpdates(mainWindow);
 }
 
 app.setName('EMTAC WORKFLOW');
+
 // --- Auto Updates (GitHub Releases) ---
-function setupAutoUpdates(mainWindow){
+function setupAutoUpdates(win){
   try{
+    autoUpdater.removeAllListeners();
+
     autoUpdater.on('error', (err) => {
       log.error('AutoUpdater error:', err);
-      if (mainWindow && mainWindow.webContents){
-        mainWindow.webContents.send('update-status', { state:'error', message:String(err) });
+      if (win && win.webContents){
+        win.webContents.send('update-status', { state:'error', message:String(err) });
       }
     });
 
     autoUpdater.on('checking-for-update', () => {
-      if (mainWindow && mainWindow.webContents){
-        mainWindow.webContents.send('update-status', { state:'checking' });
+      if (win && win.webContents){
+        win.webContents.send('update-status', { state:'checking' });
       }
     });
 
     autoUpdater.on('update-available', (info) => {
-      if (mainWindow && mainWindow.webContents){
-        mainWindow.webContents.send('update-status', { state:'available', info });
+      if (win && win.webContents){
+        win.webContents.send('update-status', { state:'available', info });
       }
     });
 
     autoUpdater.on('update-not-available', (info) => {
-      if (mainWindow && mainWindow.webContents){
-        mainWindow.webContents.send('update-status', { state:'none', info });
+      if (win && win.webContents){
+        win.webContents.send('update-status', { state:'none', info });
       }
     });
 
     autoUpdater.on('download-progress', (p) => {
-      if (mainWindow && mainWindow.webContents){
-        mainWindow.webContents.send('update-status', { state:'downloading', progress:p });
+      if (win && win.webContents){
+        win.webContents.send('update-status', { state:'downloading', progress:p });
       }
     });
 
     autoUpdater.on('update-downloaded', async (info) => {
-      if (mainWindow && mainWindow.webContents){
-        mainWindow.webContents.send('update-status', { state:'downloaded', info });
+      if (win && win.webContents){
+        win.webContents.send('update-status', { state:'downloaded', info });
       }
-      const res = await dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        buttons: ['Restart now', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-        title: 'Update ready',
-        message: 'A new version of EMTAC WORKFLOW has been downloaded.',
-        detail: 'Restart the app to install the update.'
-      });
-      if (res.response === 0){
-        autoUpdater.quitAndInstall();
+      // Optional popup (kept from your original)
+      try{
+        const res = await dialog.showMessageBox(win, {
+          type: 'info',
+          buttons: ['Restart now', 'Later'],
+          defaultId: 0,
+          cancelId: 1,
+          title: 'Update ready',
+          message: 'A new version of EMTAC WORKFLOW has been downloaded.',
+          detail: 'Restart the app to install the update.'
+        });
+        if (res.response === 0){
+          autoUpdater.quitAndInstall();
+        }
+      }catch(e){
+        // If dialog fails, still allow UI to trigger quitAndInstall via IPC
+        log.error('Update dialog failed', e);
       }
     });
 
@@ -194,6 +210,7 @@ function setupAutoUpdates(mainWindow){
   }
 }
 
+// ---- Updater IPC ----
 ipcMain.handle('check-for-updates', async () => {
   try{
     await autoUpdater.checkForUpdates();
@@ -203,64 +220,49 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
-// --- App Menu (Help) ---
-function setupAppMenu(mainWindow){
-  const template = [
-    ...(process.platform === 'darwin' ? [{
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'quit' }
-      ]
-    }] : []),
-    { role: 'fileMenu' },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
-    { role: 'windowMenu' },
-    {
-      label: 'Help',
-      submenu: [
-        { label: `Version: ${app.getVersion()}`, enabled: false },
-        { type: 'separator' },
-        {
-          label: 'Check for Updates…',
-          click: async () => {
-            try{
-              await autoUpdater.checkForUpdates();
-            }catch(e){
-              log.error('Manual update check failed', e);
-              try{
-                dialog.showMessageBox(mainWindow, {
-                  type:'error',
-                  title:'Update check failed',
-                  message:'Could not check for updates.',
-                  detail:String(e)
-                });
-              }catch(_e){}
-            }
-          }
-        }
-      ]
-    }
-  ];
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
-}
-
-app.whenReady().then(() => {
-  // Startup diagnostics (helps if jobs seem missing)
+ipcMain.handle('quit-and-install', async () => {
   try{
-    const info = (()=>{
-      const { dbPath, settingsPath } = dataPaths();
-      const db = loadDb();
-      const jobs = Array.isArray(db.jobs) ? db.jobs : [];
-      return { dbPath, settingsPath, userData: app.getPath('userData'), total: jobs.length };
-    })();
-    // Comment out if you don't want the popup
-    // dialog.showMessageBox({ type: 'info', title: 'EMTAC Startup Diagnostics', message: `DB: ${info.dbPath}\nJobs: ${info.total}\nuserData: ${info.userData}` });
-  }catch{}
+    autoUpdater.quitAndInstall();
+    return { success:true };
+  }catch(e){
+    return { success:false, error:String(e) };
+  }
+});
+
+ipcMain.handle('get-version', async () => {
+  try{
+    return app.getVersion();
+  }catch{
+    return 'Unknown';
+  }
+});
+
+ipcMain.handle('get-db-info', async () => {
+  try{
+    const { dbPath, settingsPath } = dataPaths();
+    const db = loadDb();
+    const jobs = Array.isArray(db.jobs) ? db.jobs : [];
+    return {
+      userData: app.getPath('userData'),
+      dbPath,
+      settingsPath,
+      jobsCount: jobs.length
+    };
+  }catch(e){
+    return { error: String(e?.message || e) };
+  }
+});
+
+/* ---------------------------
+   APP LIFECYCLE
+---------------------------- */
+app.whenReady().then(() => {
+  // Optional diagnostics (disabled)
+  // const info = { ...dataPaths(), userData: app.getPath('userData') };
+  // dialog.showMessageBox({ type:'info', title:'EMTAC', message: JSON.stringify(info, null, 2) });
+
   createWindow();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -273,14 +275,12 @@ app.on('window-all-closed', () => {
 /* ---------------------------
    JOB CRUD IPC
 ---------------------------- */
-
 ipcMain.handle('ping', async () => ({ ok: true, ts: nowIso(), userData: app.getPath('userData') }));
 
 ipcMain.handle('get-jobs', async () => {
   const db = loadDb();
 
   // Auto-archive: if a Completed job is 30+ days old, move it to Archived category.
-  // We keep status as "Completed" for compatibility, but add archived flags.
   const MS_30_DAYS = 30 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   let changed = false;
@@ -291,14 +291,13 @@ ipcMain.handle('get-jobs', async () => {
     const completedSource = job.completedAtSource || '';
     const isArchived = !!job.archived;
 
-    // Migration safety: if a job was archived by an older buggy rule but has no completedAt,
-    // we cannot reliably prove it's 30+ days completed, so unarchive it.
+    // Migration safety
     if (isArchived && !job.completedAt) {
       job.archived = false;
       job.archivedAt = null;
       changed = true;
     }
-    // Prefer explicit completedAt only. If missing, we can't reliably age the completion, so we do not auto-archive.
+
     const completedAtMs = Date.parse(job.completedAt || 0) || 0;
 
     if (isCompleted && !isArchived && completedAtMs && completedSource === 'user' && (now - completedAtMs) >= MS_30_DAYS) {
@@ -315,7 +314,7 @@ ipcMain.handle('get-jobs', async () => {
   return db.jobs;
 });
 
-ipcMain.handle('add-job', async (event, job) => {
+ipcMain.handle('add-job', async (_event, job) => {
   try {
     validateJob(job);
 
@@ -340,7 +339,7 @@ ipcMain.handle('add-job', async (event, job) => {
   }
 });
 
-ipcMain.handle('update-job', async (event, id, patch) => {
+ipcMain.handle('update-job', async (_event, id, patch) => {
   try {
     if (!id || typeof id !== 'string') throw new Error('Invalid job id');
     if (!patch || typeof patch !== 'object') throw new Error('Invalid patch');
@@ -349,7 +348,7 @@ ipcMain.handle('update-job', async (event, id, patch) => {
     const idx = db.jobs.findIndex(j => j.id === id);
     if (idx === -1) throw new Error('Job not found');
 
-    if ('quantity' in patch) ensureNumber(patch.quantity, 'quantity');
+    if ('quantity' in patch) patch.quantity = ensureNumberLike(patch.quantity, 'quantity', { allowBlank: true, defaultValue: db.jobs[idx].quantity ?? 1 });
 
     const updated = {
       ...db.jobs[idx],
@@ -383,7 +382,7 @@ ipcMain.handle('update-job', async (event, id, patch) => {
   }
 });
 
-ipcMain.handle('delete-job', async (event, id) => {
+ipcMain.handle('delete-job', async (_event, id) => {
   try {
     if (!id || typeof id !== 'string') throw new Error('Invalid job id');
 
@@ -403,12 +402,11 @@ ipcMain.handle('delete-job', async (event, id) => {
 /* ---------------------------
    SETTINGS IPC
 ---------------------------- */
-
 ipcMain.handle('get-settings', async () => {
   return loadSettings();
 });
 
-ipcMain.handle('save-settings', async (event, settings) => {
+ipcMain.handle('save-settings', async (_event, settings) => {
   try {
     const next = {
       serverIp: (settings?.serverIp || '').toString().trim()
@@ -423,7 +421,6 @@ ipcMain.handle('save-settings', async (event, settings) => {
 /* ---------------------------
    EXPORT PDF (printToPDF)
 ---------------------------- */
-
 function escapeHtml(s) {
   return String(s ?? '')
     .replaceAll('&', '&amp;')
@@ -451,7 +448,7 @@ function jobsToHtml(title, jobs) {
       <td>${prio}</td>
       <td>${status}</td>
       <td style="text-align:right;">${qty}</td>
-          </tr>`;
+    </tr>`;
   }).join('');
 
   return `<!doctype html>
@@ -481,7 +478,7 @@ function jobsToHtml(title, jobs) {
         <th>Priority</th>
         <th>Status</th>
         <th style="text-align:right;">Qty</th>
-              </tr>
+      </tr>
     </thead>
     <tbody>
       ${rows || `<tr><td colspan="7">No jobs</td></tr>`}
@@ -491,7 +488,7 @@ function jobsToHtml(title, jobs) {
 </html>`;
 }
 
-ipcMain.handle('export-jobs-pdf', async (event, payload) => {
+ipcMain.handle('export-jobs-pdf', async (_event, payload) => {
   try {
     const title = (payload?.title || 'EMTAC Report').toString();
     const jobs = Array.isArray(payload?.jobs) ? payload.jobs : [];
@@ -537,8 +534,7 @@ ipcMain.handle('export-jobs-pdf', async (event, payload) => {
 /* ---------------------------
    PRINT JOB CARD TO PRINTER (macOS-safe)
 ---------------------------- */
-
-ipcMain.handle('print-job-card', async (event, payload) => {
+ipcMain.handle('print-job-card', async (_event, payload) => {
   try {
     const { html } = payload || {};
     if (!html || typeof html !== 'string') {
