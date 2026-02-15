@@ -1656,37 +1656,11 @@ document.getElementById('dueDate').value = '';
           clearNewJobForm();
           focusCustomerField();
           await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
           return;
         }
 
         cancelEdit();
         await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
         return;
       }
 
@@ -1712,37 +1686,11 @@ document.getElementById('dueDate').value = '';
         clearNewJobForm();
         focusCustomerField();
         await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
         return;
       }
 
       cancelEdit();
       await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
     }
 
     async function deleteJob(jobId){
@@ -1755,19 +1703,6 @@ document.getElementById('dueDate').value = '';
       if (editingJobId === jobId) cancelEdit();
       if (cardJob && cardJob.id === jobId) closeCard();
       await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
     }
 
     async function markCompleted(job){
@@ -1793,19 +1728,6 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Failed: " + result.error);
 
       await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
       setTab('completed');
     }
 
@@ -1831,19 +1753,6 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Failed: " + result.error);
 
       await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
       setTab('active');
     }
 
@@ -1986,19 +1895,6 @@ document.getElementById('dueDate').value = '';
 
           if (!result.success) alert("Checklist save failed: " + result.error);
           await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
           renderHistory();
         };
 
@@ -2029,19 +1925,6 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Notes save failed: " + result.error);
 
       await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
       alert("Notes saved");
     }
 
@@ -2067,19 +1950,6 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Status save failed: " + result.error);
 
       await loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
       renderHistory();
       alert("Status saved");
     }
@@ -2283,20 +2153,6 @@ document.getElementById('dueDate').value = '';
     fillStatusSelect(document.getElementById('statusSelect'), DEFAULT_PHASES[0]);
     fillStatusSelect(document.getElementById('cardStatusSelect'), DEFAULT_PHASES[0]);
     loadJobs();
-// ---- Display App Version ----
-(async function showVersion(){
-  try{
-    if(window.api && typeof window.api.getVersion === "function"){
-      const v = await window.api.getVersion();
-      const el = document.getElementById("appVersion");
-      if(el) el.textContent = "v" + v;
-    }
-  }catch(e){
-    console.warn("Version load failed:", e);
-  }
-})();
-
-  
     // Default to Customer view on startup
     customerMode = true;
     document.getElementById('btnCustomer')?.classList.add('active');
