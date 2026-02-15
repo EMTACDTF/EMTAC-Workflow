@@ -204,7 +204,16 @@ function setupAutoUpdates(win){
     });
 
     // Check on startup
-    autoUpdater.checkForUpdatesAndNotify();
+    if (!app.isPackaged){
+      log.info('Skipping auto update check in dev mode (app is not packaged).');
+      try{
+        if (win && win.webContents){
+          win.webContents.send('update-status', { state:'none', info:{ note:'Dev mode: updater disabled' } });
+        }
+      }catch{}
+    } else {
+      autoUpdater.checkForUpdatesAndNotify();
+    }
   }catch(e){
     log.error('setupAutoUpdates failed', e);
   }
@@ -213,6 +222,10 @@ function setupAutoUpdates(win){
 // ---- Updater IPC ----
 ipcMain.handle('check-for-updates', async () => {
   try{
+    if (!app.isPackaged){
+      // electron-updater often doesn't resolve properly in dev mode unless you set up dev-app-update.yml.
+      return { success:false, error:'Updater is disabled in dev mode. Test updates using the installed app (Windows .exe / packaged build).' };
+    }
     await autoUpdater.checkForUpdates();
     return { success:true };
   }catch(e){

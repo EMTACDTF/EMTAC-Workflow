@@ -370,7 +370,7 @@
         <div class="logo"></div>
         <div>
           <h1>EMTAC Job Cards</h1>
-          <div class="sub">Stable build · DTF + Embroidery</div>
+          <div class="sub">Stable build · DTF + Embroidery · <span id="appVersion">v...</span></div>
         </div>
       </div>
       <div class="actions">
@@ -380,6 +380,9 @@
           <button class="btn" id="btnCustomer" onclick="toggleCustomerMode()">👤 Customer</button>
         <button class="btn" id="btnJobs" onclick="showJobs()">📋 Jobs</button>
         <button class="btn btnPrimary" onclick="exportPdf()">Export PDF</button>
+        <span class="chip" id="updateStatusChip" style="display:none;">Updater: <span id="updateStatusText">Idle</span></span>
+        <button class="btn" id="btnCheckUpdates" onclick="checkForUpdates()">⬇️ Check Updates</button>
+        <button class="btn btnPrimary" id="btnRestartUpdate" onclick="restartToUpdate()" style="display:none;">🔁 Restart to Update</button>
       </div>
     </div>
   </div>
@@ -841,6 +844,92 @@
         showStatus('DB Info Error', '', String(err?.message || err));
       }
     }
+    
+// ---- Updates UI ----
+function setUpdateChip(text, show=true){
+  const chip = document.getElementById('updateStatusChip');
+  const t = document.getElementById('updateStatusText');
+  if (t) t.textContent = text || '';
+  if (chip) chip.style.display = show ? 'inline-flex' : 'none';
+}
+
+async function checkForUpdates(){
+  try{
+    if (!window.api || typeof window.api.checkForUpdates !== 'function'){
+      alert("Update API missing (preload/main not updated).");
+      return;
+    }
+    setUpdateChip('Checking…', true);
+    const r = await window.api.checkForUpdates();
+    if (!r?.success){
+      setUpdateChip('Error', true);
+      alert("Update check failed: " + (r?.error || 'Unknown error'));
+    }
+  }catch(e){
+    setUpdateChip('Error', true);
+    alert("Update check failed: " + String(e?.message || e));
+  }
+}
+
+async function restartToUpdate(){
+  try{
+    if (!window.api || typeof window.api.quitAndInstall !== 'function'){
+      alert("Update API missing (preload/main not updated).");
+      return;
+    }
+    await window.api.quitAndInstall();
+  }catch(e){
+    alert("Restart to update failed: " + String(e?.message || e));
+  }
+}
+
+function bindUpdateStatus(){
+  try{
+    if (!window.api || typeof window.api.onUpdateStatus !== 'function') return;
+    window.api.onUpdateStatus((data)=>{
+      const state = data?.state || '';
+      if (!state) return;
+
+      const restartBtn = document.getElementById('btnRestartUpdate');
+      const checkBtn = document.getElementById('btnCheckUpdates');
+
+      if (state === 'checking'){
+        setUpdateChip('Checking…', true);
+        if (checkBtn) checkBtn.disabled = true;
+      } else if (state === 'available'){
+        setUpdateChip('Update available… downloading', true);
+        if (checkBtn) checkBtn.disabled = true;
+      } else if (state === 'downloading'){
+        const p = data?.progress;
+        const pct = (p && typeof p.percent === 'number') ? Math.round(p.percent) : null;
+        setUpdateChip(pct !== null ? `Downloading… ${pct}%` : 'Downloading…', true);
+        if (checkBtn) checkBtn.disabled = true;
+      } else if (state === 'downloaded'){
+        setUpdateChip('Downloaded. Restart to install.', true);
+        if (restartBtn) restartBtn.style.display = 'inline-flex';
+        if (checkBtn) checkBtn.disabled = false;
+      } else if (state === 'none'){
+        setUpdateChip('No updates', true);
+        if (restartBtn) restartBtn.style.display = 'none';
+        if (checkBtn) checkBtn.disabled = false;
+        // hide chip after a short while (optional)
+        setTimeout(()=>{ setUpdateChip('', false); }, 4000);
+      } else if (state === 'error'){
+        setUpdateChip('Error', true);
+        if (restartBtn) restartBtn.style.display = 'none';
+        if (checkBtn) checkBtn.disabled = false;
+      } else {
+        // unknown state
+        setUpdateChip(state, true);
+        if (checkBtn) checkBtn.disabled = false;
+      }
+    });
+  }catch(e){
+    // ignore
+  }
+}
+
+
     window.addEventListener('error', (e)=>{
       showStatus('Script Error', '', String(e?.message || e));
     });
@@ -1331,6 +1420,19 @@
             return;
           }
           await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
 
     syncStatusUI();
     loadFormCollapse();
@@ -1426,7 +1528,8 @@
       document.getElementById('cancelEditBtn').style.display = 'inline-block';
 
       document.getElementById('jobType').value = job.type || 'DTF';
-      renderTypeFields();
+      bindUpdateStatus();
+    renderTypeFields();
 
       document.getElementById('customerName').value = job.customerName ?? '';
       document.getElementById('customerPhone').value = job.customerPhone ?? '';
@@ -1553,11 +1656,37 @@ document.getElementById('dueDate').value = '';
           clearNewJobForm();
           focusCustomerField();
           await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
           return;
         }
 
         cancelEdit();
         await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
         return;
       }
 
@@ -1583,11 +1712,37 @@ document.getElementById('dueDate').value = '';
         clearNewJobForm();
         focusCustomerField();
         await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
         return;
       }
 
       cancelEdit();
       await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
     }
 
     async function deleteJob(jobId){
@@ -1600,6 +1755,19 @@ document.getElementById('dueDate').value = '';
       if (editingJobId === jobId) cancelEdit();
       if (cardJob && cardJob.id === jobId) closeCard();
       await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
     }
 
     async function markCompleted(job){
@@ -1625,6 +1793,19 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Failed: " + result.error);
 
       await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
       setTab('completed');
     }
 
@@ -1650,6 +1831,19 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Failed: " + result.error);
 
       await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
       setTab('active');
     }
 
@@ -1792,6 +1986,19 @@ document.getElementById('dueDate').value = '';
 
           if (!result.success) alert("Checklist save failed: " + result.error);
           await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
           renderHistory();
         };
 
@@ -1822,6 +2029,19 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Notes save failed: " + result.error);
 
       await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
       alert("Notes saved");
     }
 
@@ -1847,6 +2067,19 @@ document.getElementById('dueDate').value = '';
       if (!result.success) return alert("Status save failed: " + result.error);
 
       await loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
       renderHistory();
       alert("Status saved");
     }
@@ -2050,6 +2283,19 @@ document.getElementById('dueDate').value = '';
     fillStatusSelect(document.getElementById('statusSelect'), DEFAULT_PHASES[0]);
     fillStatusSelect(document.getElementById('cardStatusSelect'), DEFAULT_PHASES[0]);
     loadJobs();
+// ---- Display App Version ----
+(async function showVersion(){
+  try{
+    if(window.api && typeof window.api.getVersion === "function"){
+      const v = await window.api.getVersion();
+      const el = document.getElementById("appVersion");
+      if(el) el.textContent = "v" + v;
+    }
+  }catch(e){
+    console.warn("Version load failed:", e);
+  }
+})();
+
   
     // Default to Customer view on startup
     customerMode = true;

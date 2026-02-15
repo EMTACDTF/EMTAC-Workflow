@@ -46,7 +46,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "icon": "icon.ico"
     },
     "publish": [
       {
@@ -60,7 +61,8 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.business"
+      "category": "public.app-category.business",
+      "icon": "icon.icns"
     }
   }
 }
