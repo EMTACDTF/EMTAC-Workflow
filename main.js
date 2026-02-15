@@ -210,7 +210,7 @@ function startLanServer(getMainWindow){
 // Auth: if a LAN key is configured, require it for jobs endpoints
 const urlObj = new URL(req.url, 'http://localhost');
 const pathname = urlObj.pathname || '';
-const needsAuth = (pathname.startsWith('/jobs') || pathname.startsWith('/db'));
+const needsAuth = pathname.startsWith('/jobs') || pathname.startsWith('/db');
 if(needsAuth && !isAuthorizedLanRequest(req)){
   res.writeHead(401, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error:'Unauthorized' }));
@@ -331,7 +331,7 @@ async function remoteFetch(path, options = {}){
     const res = await fetch(url.toString(), {
       method,
       headers: {
-      ...(lanKey ? { 'X-EMTAC-KEY': String(lanKey) } : {}), 'Content-Type':'application/json', ...(options.headers||{}) },
+      ...(lanKey && String(lanKey).trim() ? { 'X-EMTAC-KEY': String(lanKey).trim() } : {}), 'Content-Type':'application/json', ...(options.headers||{}) },
       body
     });
     const jsonBody = await res.json().catch(()=>null);
@@ -392,11 +392,11 @@ function getLanKey(){
 function isAuthorizedLanRequest(req){
   try{
     const configured = getLanKey();
-    if(!configured) return true; // backward-compatible: no key set = allow
-    const headerKey = req?.headers?.['x-emtac-key'] || req?.headers?.['X-EMTAC-KEY'];
+    if(!configured) return true; // no key set = allow (backwards compatible)
+    const headerKey = req?.headers?.['x-emtac-key'];
     const url = new URL(req.url, 'http://localhost');
     const queryKey = url.searchParams.get('key');
-    const provided = (headerKey || queryKey || '').toString().trim();
+    const provided = String(headerKey || queryKey || '').trim();
     return provided && provided === configured;
   }catch{
     return false;
