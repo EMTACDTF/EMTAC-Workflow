@@ -377,6 +377,7 @@
         <button class="btn" onclick="toggleTheme()">🌗 Dark mode</button>
         <button class="btn" id="btnArchive" onclick="toggleArchive()">🗄️ Archive</button>
           <button class="btn" id="btnSettings" onclick="openSettings()">⚙️ Settings</button>
+        <button class="btn" id="btnAbout" onclick="openAbout()">ℹ️ About</button>
           <button class="btn" id="btnCustomer" onclick="toggleCustomerMode()">👤 Customer</button>
         <button class="btn" id="btnJobs" onclick="showJobs()">📋 Jobs</button>
         <button class="btn btnPrimary" onclick="exportPdf()">Export PDF</button>
@@ -642,6 +643,62 @@
   </div>
 
   
+  
+
+<!-- About / Diagnostics Overlay -->
+<div id="aboutOverlay" class="overlay" style="display:none;" onclick="if(event.target.id==='aboutOverlay') closeAbout()">
+  <div class="modal" style="max-width:820px;">
+    <div class="modalHeader">
+      <h2>About & Diagnostics</h2>
+      <button class="btn btnSmall" onclick="closeAbout()">✖</button>
+    </div>
+    <div class="panel" style="margin-top:10px;">
+      <div class="panelTitle"><h2>App</h2><span class="muted" id="aboutVersion">Loading…</span></div>
+      <div class="row2">
+        <div>
+          <div class="muted">Platform</div>
+          <div id="aboutPlatform" style="font-weight:600;">—</div>
+        </div>
+        <div>
+          <div class="muted">User Data</div>
+          <div id="aboutUserData" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; word-break:break-all;">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:10px;">
+      <div class="panelTitle"><h2>Database</h2><span class="muted">Storage paths & counts</span></div>
+      <div class="row2">
+        <div>
+          <div class="muted">Jobs Count</div>
+          <div id="aboutJobsCount" style="font-weight:700; font-size:22px;">—</div>
+        </div>
+        <div>
+          <div class="muted">DB Path</div>
+          <div id="aboutDbPath" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; word-break:break-all;">—</div>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:10px;">Settings Path</div>
+      <div id="aboutSettingsPath" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; word-break:break-all;">—</div>
+    </div>
+
+    <div class="panel" style="margin-top:10px;">
+      <div class="panelTitle"><h2>Updater</h2><span class="muted" id="aboutUpdaterState">—</span></div>
+      <div class="row2">
+        <div>
+          <button class="btn" onclick="checkForUpdates()">⬇️ Check Updates</button>
+          <button class="btn btnPrimary" id="aboutRestartBtn" onclick="restartToUpdate()" style="display:none;">🔁 Restart to Update</button>
+        </div>
+        <div>
+          <button class="btn" onclick="copyDiagnostics()">📋 Copy Diagnostics</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:10px;" id="aboutCopyHint"></div>
+    </div>
+  </div>
+</div>
+
+
   <!-- Settings Overlay -->
   <div id="settingsOverlay" class="overlay" style="display:none;" onclick="if(event.target.id==='settingsOverlay') closeSettings()">
     <div class="modal" onclick="event.stopPropagation()">
@@ -1063,6 +1120,80 @@ function wireRestoreNotifications(){
 }
 
 
+  
+
+// ---- About / Diagnostics ----
+let lastUpdateState = null;
+let lastUpdatePayload = null;
+
+function openAbout(){
+  const ov = document.getElementById('aboutOverlay');
+  if(ov) ov.style.display = 'flex';
+  loadAboutInfo();
+}
+function closeAbout(){
+  const ov = document.getElementById('aboutOverlay');
+  if(ov) ov.style.display = 'none';
+}
+
+async function loadAboutInfo(){
+  try{
+    const v = await window.api?.getVersion?.();
+    const verEl = document.getElementById('aboutVersion');
+    if(verEl) verEl.textContent = v ? `v${v}` : 'Unknown';
+
+    const platEl = document.getElementById('aboutPlatform');
+    if(platEl) platEl.textContent = navigator.platform || 'Unknown';
+
+    const info = await window.api?.getDbInfo?.();
+    if(info && !info.error){
+      const ud = document.getElementById('aboutUserData');
+      const dbp = document.getElementById('aboutDbPath');
+      const sp = document.getElementById('aboutSettingsPath');
+      const jc = document.getElementById('aboutJobsCount');
+      if(ud) ud.textContent = info.userData || '—';
+      if(dbp) dbp.textContent = info.dbPath || '—';
+      if(sp) sp.textContent = info.settingsPath || '—';
+      if(jc) jc.textContent = (typeof info.jobsCount === 'number') ? String(info.jobsCount) : '—';
+    }else{
+      const hint = document.getElementById('aboutCopyHint');
+      if(hint) hint.textContent = 'Could not load DB info.';
+    }
+
+    // updater state
+    const u = document.getElementById('aboutUpdaterState');
+    if(u) u.textContent = lastUpdateState ? `State: ${lastUpdateState}` : 'State: —';
+    const rb = document.getElementById('aboutRestartBtn');
+    if(rb) rb.style.display = (lastUpdateState === 'downloaded') ? 'inline-flex' : 'none';
+  }catch(e){
+    console.warn('loadAboutInfo failed', e);
+  }
+}
+
+async function copyDiagnostics(){
+  try{
+    const v = await window.api?.getVersion?.();
+    const info = await window.api?.getDbInfo?.();
+    const diag = {
+      appVersion: v || 'Unknown',
+      platform: navigator.platform || 'Unknown',
+      userAgent: navigator.userAgent,
+      dbInfo: info || null,
+      updater: { state: lastUpdateState, payload: lastUpdatePayload }
+    };
+    const text = JSON.stringify(diag, null, 2);
+    await navigator.clipboard.writeText(text);
+    const hint = document.getElementById('aboutCopyHint');
+    if(hint) hint.textContent = 'Copied diagnostics to clipboard ✓';
+    setTimeout(()=>{ if(hint && hint.textContent.includes('Copied')) hint.textContent = ''; }, 4000);
+  }catch(e){
+    const hint = document.getElementById('aboutCopyHint');
+    if(hint) hint.textContent = 'Copy failed (clipboard permission).';
+    console.warn('copyDiagnostics failed', e);
+  }
+}
+
+
   // ---- Updates UI ----
 function setUpdateChip(text, show=true){
   const chip = document.getElementById('updateStatusChip');
@@ -1105,6 +1236,11 @@ function bindUpdateStatus(){
   try{
     if (!window.api || typeof window.api.onUpdateStatus !== 'function') return;
     window.api.onUpdateStatus((data)=>{
+          lastUpdateState = data?.state || null;
+          lastUpdatePayload = data || null;
+          try{ const u = document.getElementById('aboutUpdaterState'); if(u) u.textContent = lastUpdateState ? `State: ${lastUpdateState}` : 'State: —'; }catch{}
+          try{ const rb = document.getElementById('aboutRestartBtn'); if(rb) rb.style.display = (lastUpdateState === 'downloaded') ? 'inline-flex' : 'none'; }catch{}
+
       const state = data?.state || '';
       if (!state) return;
 
