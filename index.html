@@ -971,6 +971,98 @@ function wireDraftAutosave(){
 }
 
 
+  
+
+async function loadSettingsIntoUI(){
+  try{
+    if(!window.api || typeof window.api.getSettings !== 'function') return;
+    const s = await window.api.getSettings();
+    const ipEl = document.getElementById('serverIp');
+    if(ipEl) ipEl.value = (s?.serverIp || '');
+  }catch(e){
+    console.warn('loadSettingsIntoUI failed', e);
+  }
+}
+
+
+// ---- Backup / Restore UI ----
+async function backupDatabase(){
+  try{
+    if(!window.api || typeof window.api.exportDbBackup !== 'function'){
+      alert('Backup API missing.');
+      return;
+    }
+    const r = await window.api.exportDbBackup();
+    if(r?.success) alert('Database backup saved:\n' + r.filePath);
+    else if(r?.error && r.error !== 'Cancelled') alert('Backup failed: ' + r.error);
+  }catch(e){
+    alert('Backup failed: ' + String(e?.message || e));
+  }
+}
+
+async function restoreDatabase(){
+  try{
+    if(!window.api || typeof window.api.importDbBackup !== 'function'){
+      alert('Restore API missing.');
+      return;
+    }
+    const r = await window.api.importDbBackup();
+    if(r?.success){
+      alert('Database restored. Jobs: ' + (r.jobsCount ?? ''));
+      await loadJobs();
+    }else if(r?.error && r.error !== 'Cancelled'){
+      alert('Restore failed: ' + r.error);
+    }
+  }catch(e){
+    alert('Restore failed: ' + String(e?.message || e));
+  }
+}
+
+async function backupSettings(){
+  try{
+    if(!window.api || typeof window.api.exportSettingsBackup !== 'function'){
+      alert('Settings backup API missing.');
+      return;
+    }
+    const r = await window.api.exportSettingsBackup();
+    if(r?.success) alert('Settings backup saved:\n' + r.filePath);
+    else if(r?.error && r.error !== 'Cancelled') alert('Backup failed: ' + r.error);
+  }catch(e){
+    alert('Backup failed: ' + String(e?.message || e));
+  }
+}
+
+async function restoreSettings(){
+  try{
+    if(!window.api || typeof window.api.importSettingsBackup !== 'function'){
+      alert('Settings restore API missing.');
+      return;
+    }
+    const r = await window.api.importSettingsBackup();
+    if(r?.success){
+      alert('Settings restored.');
+      // Reload settings into UI
+      await loadSettingsIntoUI();
+    }else if(r?.error && r.error !== 'Cancelled'){
+      alert('Restore failed: ' + r.error);
+    }
+  }catch(e){
+    alert('Restore failed: ' + String(e?.message || e));
+  }
+}
+
+function wireRestoreNotifications(){
+  try{
+    if(window.api?.onDbRestored){
+      window.api.onDbRestored(async ()=>{ try{ await loadJobs(); }catch{} });
+    }
+    if(window.api?.onSettingsRestored){
+      window.api.onSettingsRestored(async ()=>{ try{ await loadSettingsIntoUI(); }catch{} });
+    }
+  }catch{}
+}
+
+
   // ---- Updates UI ----
 function setUpdateChip(text, show=true){
   const chip = document.getElementById('updateStatusChip');
@@ -1658,6 +1750,7 @@ clearJobDraft();
       bindUpdateStatus();
     loadJobDraft();
     wireDraftAutosave();
+    wireRestoreNotifications();
     renderTypeFields();
 
       document.getElementById('customerName').value = job.customerName ?? '';
@@ -2290,4 +2383,29 @@ document.getElementById('dueDate').value = '';
     applyCustomerModeUI();
 </script>
 </body>
-</html>
+</html
+
+<div class="panel" style="margin-top:14px;">
+  <div class="panelTitle"><h2>Backup / Restore</h2><span class="muted">Protect your jobs & settings</span></div>
+  <div class="row2">
+    <div>
+      <button class="btn" onclick="backupDatabase()">💾 Backup Jobs (DB)</button>
+      <div class="muted" style="margin-top:6px;">Exports all jobs to a JSON backup file.</div>
+    </div>
+    <div>
+      <button class="btn" onclick="restoreDatabase()">♻️ Restore Jobs (DB)</button>
+      <div class="muted" style="margin-top:6px;">Replaces current jobs with a backup file.</div>
+    </div>
+  </div>
+  <div class="row2" style="margin-top:10px;">
+    <div>
+      <button class="btn" onclick="backupSettings()">💾 Backup Settings</button>
+      <div class="muted" style="margin-top:6px;">Exports settings (server IP, etc.).</div>
+    </div>
+    <div>
+      <button class="btn" onclick="restoreSettings()">♻️ Restore Settings</button>
+      <div class="muted" style="margin-top:6px;">Replaces current settings from backup.</div>
+    </div>
+  </div>
+</div>
+>

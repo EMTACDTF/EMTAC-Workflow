@@ -204,16 +204,7 @@ function setupAutoUpdates(win){
     });
 
     // Check on startup
-    if (!app.isPackaged){
-      log.info('Skipping auto update check in dev mode (app is not packaged).');
-      try{
-        if (win && win.webContents){
-          win.webContents.send('update-status', { state:'none', info:{ note:'Dev mode: updater disabled' } });
-        }
-      }catch{}
-    } else {
-      autoUpdater.checkForUpdatesAndNotify();
-    }
+    autoUpdater.checkForUpdatesAndNotify();
   }catch(e){
     log.error('setupAutoUpdates failed', e);
   }
@@ -222,10 +213,6 @@ function setupAutoUpdates(win){
 // ---- Updater IPC ----
 ipcMain.handle('check-for-updates', async () => {
   try{
-    if (!app.isPackaged){
-      // electron-updater often doesn't resolve properly in dev mode unless you set up dev-app-update.yml.
-      return { success:false, error:'Updater is disabled in dev mode. Test updates using the installed app (Windows .exe / packaged build).' };
-    }
     await autoUpdater.checkForUpdates();
     return { success:true };
   }catch(e){
@@ -265,6 +252,132 @@ ipcMain.handle('get-db-info', async () => {
     return { error: String(e?.message || e) };
   }
 });
+
+/* ---------------------------
+   BACKUP / RESTORE (DB + SETTINGS)
+---------------------------- */
+ipcMain.handle('export-db-backup', async () => {
+  try{
+    const { dbPath } = dataPaths();
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Backup Database',
+      defaultPath: `emtac_db_backup_${new Date().toISOString().slice(0,10)}.json`,
+      filters: [{ name:'JSON', extensions:['json'] }]
+    });
+    if (canceled || !filePath) return { success:false, error:'Cancelled' };
+
+    // Ensure DB exists and is valid
+    const db = loadDb();
+    writeJsonSafe(filePath, db);
+    return { success:true, filePath };
+  }catch(e){
+    return { success:false, error:String(e?.message || e) };
+  }
+});
+
+ipcMain.handle('import-db-backup', async () => {
+  try{
+    const { dbPath } = dataPaths();
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Restore Database',
+      properties: ['openFile'],
+      filters: [{ name:'JSON', extensions:['json'] }]
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { success:false, error:'Cancelled' };
+    const srcPath = filePaths[0];
+
+    const raw = fs.readFileSync(srcPath, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    // Basic validation
+    if (!parsed || typeof parsed !== 'object') throw new Error('Invalid backup file');
+    if (!Array.isArray(parsed.jobs)) throw new Error('Backup must contain a jobs array');
+
+    // Confirm restore
+    const res = await dialog.showMessageBox(mainWindow || undefined, {
+      type: 'warning',
+      buttons: ['Restore', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Confirm Restore',
+      message: 'This will replace your current database on this computer.',
+      detail: `Backup contains ${parsed.jobs.length} jobs.`
+    });
+    if (res.response !== 0) return { success:false, error:'Cancelled' };
+
+    writeJsonSafe(dbPath, parsed);
+
+    // Notify UI to refresh
+    try{
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('db-restored', { ok:true, jobsCount: parsed.jobs.length });
+      }
+    }catch{}
+
+    return { success:true, jobsCount: parsed.jobs.length };
+  }catch(e){
+    return { success:false, error:String(e?.message || e) };
+  }
+});
+
+ipcMain.handle('export-settings-backup', async () => {
+  try{
+    const { settingsPath } = dataPaths();
+    const settings = loadSettings();
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Backup Settings',
+      defaultPath: `emtac_settings_backup_${new Date().toISOString().slice(0,10)}.json`,
+      filters: [{ name:'JSON', extensions:['json'] }]
+    });
+    if (canceled || !filePath) return { success:false, error:'Cancelled' };
+    writeJsonSafe(filePath, settings);
+    return { success:true, filePath };
+  }catch(e){
+    return { success:false, error:String(e?.message || e) };
+  }
+});
+
+ipcMain.handle('import-settings-backup', async () => {
+  try{
+    const { settingsPath } = dataPaths();
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Restore Settings',
+      properties: ['openFile'],
+      filters: [{ name:'JSON', extensions:['json'] }]
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { success:false, error:'Cancelled' };
+    const srcPath = filePaths[0];
+
+    const raw = fs.readFileSync(srcPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') throw new Error('Invalid settings backup');
+
+    const res = await dialog.showMessageBox(mainWindow || undefined, {
+      type: 'warning',
+      buttons: ['Restore', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Confirm Restore',
+      message: 'This will replace your current settings on this computer.'
+    });
+    if (res.response !== 0) return { success:false, error:'Cancelled' };
+
+    writeJsonSafe(settingsPath, parsed);
+
+    // Notify UI to refresh settings UI
+    try{
+      if (mainWindow && mainWindow.webContents){
+        mainWindow.webContents.send('settings-restored', { ok:true });
+      }
+    }catch{}
+
+    return { success:true };
+  }catch(e){
+    return { success:false, error:String(e?.message || e) };
+  }
+});
+
+
 
 /* ---------------------------
    APP LIFECYCLE
