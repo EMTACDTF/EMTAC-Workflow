@@ -253,6 +253,24 @@ function isClientMode(){
   return !!s?.serverIp;
 }
 
+function notifyLanErrorOnce(message){
+  try{
+    const now = Date.now();
+    if(now - lastLanErrorAt < 15000) return; // throttle
+    lastLanErrorAt = now;
+    if(process.platform === 'win32'){
+      const ip = (loadSettings()?.serverIp) || '192.168.3.149';
+      dialog.showErrorBox('EMTAC Live Sync Error',
+        message + '\n\nCheck: Is the Mac app running? Can you open http://' + ip + ':3030/health in your browser?');
+    } else {
+      console.error('[LAN ERROR]', message);
+    }
+  }catch(e){
+    console.error('[LAN ERROR notify failed]', e);
+  }
+}
+
+
 
 function loadSettings() {
   const { settingsPath } = dataPaths();
@@ -616,17 +634,20 @@ app.on('window-all-closed', () => {
 ---------------------------- */
 ipcMain.handle('ping', async () => ({ ok: true, ts: nowIso(), userData: app.getPath('userData') }));
 
+
 ipcMain.removeHandler('get-jobs');
 ipcMain.handle('get-jobs', async () => {
   try{
-    if(isClientMode()){
+    const s = loadSettings();
+    const serverIp = s?.serverIp;
+    if(process.platform === 'win32' && serverIp){
       const r = await remoteFetch('/jobs');
       return Array.isArray(r?.jobs) ? r.jobs : [];
     }
     const db = loadDb();
     return Array.isArray(db.jobs) ? db.jobs : [];
   }catch(e){
-    console.error('[get-jobs] failed', e);
+    notifyLanErrorOnce('Could not load jobs from Mac: ' + String(e?.message||e));
     return [];
   }
 });
@@ -649,6 +670,7 @@ ipcMain.handle('add-job', async (_e, job) => {
     saveDb(db);
     return { success:true, job: newJob };
   }catch(e){
+    notifyLanErrorOnce('Could not add job to Mac: ' + String(e?.message||e));
     return { success:false, error:String(e?.message||e) };
   }
 });
@@ -668,6 +690,7 @@ ipcMain.handle('update-job', async (_e, id, patch) => {
     saveDb(db);
     return { success:true, job: db.jobs[idx] };
   }catch(e){
+    notifyLanErrorOnce('Could not update job on Mac: ' + String(e?.message||e));
     return { success:false, error:String(e?.message||e) };
   }
 });
@@ -688,6 +711,7 @@ ipcMain.handle('delete-job', async (_e, id) => {
     saveDb(db);
     return { success:true, removedId: id };
   }catch(e){
+    notifyLanErrorOnce('Could not delete job on Mac: ' + String(e?.message||e));
     return { success:false, error:String(e?.message||e) };
   }
 });
@@ -702,6 +726,7 @@ ipcMain.handle('ping-server', async ()=>{
     const r = await remoteFetch('/health');
     return { success:true, health:r };
   }catch(e){
+    notifyLanErrorOnce('Could not reach Mac server: ' + String(e?.message||e));
     return { success:false, error:String(e?.message||e) };
   }
 });
