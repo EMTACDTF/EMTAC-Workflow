@@ -1,6 +1,6 @@
 {
   "name": "emtac-workflow",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "Simple Stable EMTAC Offline App",
   "main": "main.js",
   "scripts": {
