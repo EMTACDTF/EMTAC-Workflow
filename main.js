@@ -27,6 +27,7 @@ const path = require('path');
 const fs = require('fs');
 
 const http = require('http');
+const WebSocket = require('ws');
 const { URL } = require('url');
 let lanServer = null;
 let mainWindow;
@@ -138,6 +139,22 @@ function json(res, code, obj){
   res.end(body);
 }
 
+
+// ---- LAN WebSocket push (Mac master -> clients) ----
+let wsServer = null;
+const wsClients = new Set();
+
+function wsBroadcast(obj){
+  try{
+    const msg = JSON.stringify(obj);
+    for(const c of wsClients){
+      try{
+        if(c.readyState === WebSocket.OPEN) c.send(msg);
+      }catch{}
+    }
+  }catch{}
+}
+
 function startLanServer(getMainWindow){
   // Only Mac acts as master
   if (process.platform !== 'darwin') return null;
@@ -185,6 +202,7 @@ function startLanServer(getMainWindow){
           const win = getMainWindow?.();
           if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'add', id: job.id });
         }catch{}
+        try{ wsBroadcast({ type:'jobs-changed', action:'add', id: job.id, ts: Date.now() }); }catch{}
 
         return json(res, 200, { ok:true, job });
       }
@@ -204,6 +222,7 @@ function startLanServer(getMainWindow){
             const win = getMainWindow?.();
             if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'delete', id });
           }catch{}
+        try{ wsBroadcast({ type:'jobs-changed', action:'delete', id, ts: Date.now() }); }catch{}
           return json(res, 200, { ok:true, removedId: id });
         }
 
@@ -221,6 +240,7 @@ function startLanServer(getMainWindow){
           const win = getMainWindow?.();
           if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'update', id });
         }catch{}
+        try{ wsBroadcast({ type:'jobs-changed', action:'update', id, ts: Date.now() }); }catch{}
 
         return json(res, 200, { ok:true, job: updated });
       }
@@ -230,6 +250,20 @@ function startLanServer(getMainWindow){
       return json(res, 500, { ok:false, error:String(e?.message || e) });
     }
   });
+
+// Attach WebSocket server on the same port/path for real-time push
+if(!wsServer){
+  wsServer = new WebSocket.Server({ server, path: '/ws' });
+  wsServer.on('connection', (socket) => {
+    wsClients.add(socket);
+    try{
+      socket.send(JSON.stringify({ type:'hello', role:'master', version: app.getVersion(), time: Date.now() }));
+    }catch{}
+    socket.on('close', ()=> wsClients.delete(socket));
+    socket.on('error', ()=> wsClients.delete(socket));
+  });
+}
+
 
   server.on('error', (e)=>{ console.error('[LAN] Server error', e); });
 
@@ -694,6 +728,7 @@ ipcMain.handle('add-job', async (_e, job) => {
     newJob.updatedAt = Date.now();
     db.jobs.unshift(newJob);
     saveDb(db);
+    try{ wsBroadcast({ type:'jobs-changed', action:'add', id: newJob.id, ts: Date.now() }); }catch{}
     return { success:true, job: newJob };
   }catch(e){
     return { success:false, error:String(e?.message||e) };
@@ -713,6 +748,7 @@ ipcMain.handle('update-job', async (_e, id, patch) => {
     if(idx === -1) return { success:false, error:'Job not found' };
     db.jobs[idx] = { ...db.jobs[idx], ...patch, id: db.jobs[idx].id, updatedAt: Date.now() };
     saveDb(db);
+    try{ wsBroadcast({ type:'jobs-changed', action:'update', id, ts: Date.now() }); }catch{}
     return { success:true, job: db.jobs[idx] };
   }catch(e){
     return { success:false, error:String(e?.message||e) };
@@ -733,6 +769,7 @@ ipcMain.handle('delete-job', async (_e, id) => {
     if(idx === -1) return { success:false, error:'Job not found' };
     db.jobs.splice(idx, 1);
     saveDb(db);
+    try{ wsBroadcast({ type:'jobs-changed', action:'delete', id, ts: Date.now() }); }catch{}
     return { success:true, removedId: id };
   }catch(e){
     return { success:false, error:String(e?.message||e) };

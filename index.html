@@ -1511,12 +1511,13 @@ async function refreshAppVersion(){
   
     function showToast(msg){ alert(msg); }
 
-  
-
-// ---- Live Sync: auto reconnect + status indicator ----
+// ---- Live Sync: WebSocket push + auto reconnect + status indicator ----
 let __syncConnected = false;
 let __syncTimer = null;
-let __jobsPollTimer = null;
+let __ws = null;
+let __wsBackoff = 1000; // start 1s
+let __wsReconnectTimer = null;
+let __fallbackRefreshTimer = null;
 
 function setSyncStatus(state){
   const el = document.getElementById('syncIndicator');
@@ -1529,53 +1530,120 @@ function setSyncStatus(state){
   else txt.textContent = 'Disconnected';
 }
 
-async function checkServerOnce(){
-  try{
-    if(!window.api || typeof window.api.pingServer !== 'function'){
-      // No LAN feature available
-      setSyncStatus('disconnected');
-      __syncConnected = false;
-      return false;
-    }
-    const r = await window.api.pingServer();
-    const ok = !!(r && (r.success === true || r.ok === true || r.health?.ok === true));
-    return ok;
-  }catch{
-    return false;
+function getServerIpFromUI(){
+  const el = document.getElementById('serverIpModal') || document.getElementById('serverIp');
+  return el ? (el.value || '').trim() : '';
+}
+
+function stopWs(){
+  try{ if(__ws){ __ws.onopen = __ws.onclose = __ws.onerror = __ws.onmessage = null; __ws.close(); } }catch{}
+  __ws = null;
+}
+
+function scheduleWsReconnect(){
+  if(__wsReconnectTimer) return;
+  __wsReconnectTimer = setTimeout(async ()=>{
+    __wsReconnectTimer = null;
+    await connectWs();
+  }, __wsBackoff);
+  __wsBackoff = Math.min(__wsBackoff * 1.6, 15000); // cap 15s
+}
+
+async function connectWs(){
+  stopWs();
+  const ip = getServerIpFromUI();
+  if(!ip){
+    __syncConnected = false;
+    setSyncStatus('disconnected');
+    return;
   }
-}
 
-function startJobsPolling(){
-  // Light polling so Mac-added jobs appear without restart.
-  if(__jobsPollTimer) return;
-  __jobsPollTimer = setInterval(async ()=>{
-    if(!__syncConnected) return;
+  setSyncStatus('connecting');
+
+  // Quick ping to validate server before WS connect
+  try{
+    if(window.api && typeof window.api.pingServer === 'function'){
+      const r = await window.api.pingServer();
+      const ok = !!(r && (r.success === true || r.health?.ok === true));
+      if(!ok){
+        __syncConnected = false;
+        setSyncStatus('disconnected');
+        scheduleWsReconnect();
+        return;
+      }
+    }
+  }catch{
+    __syncConnected = false;
+    setSyncStatus('disconnected');
+    scheduleWsReconnect();
+    return;
+  }
+
+  const url = `ws://${ip}:3030/ws`;
+  try{
+    __ws = new WebSocket(url);
+  }catch{
+    __syncConnected = false;
+    setSyncStatus('disconnected');
+    scheduleWsReconnect();
+    return;
+  }
+
+  __ws.onopen = async () => {
+    __wsBackoff = 1000;
+    __syncConnected = true;
+    setSyncStatus('connected');
+    try{ showToast('Live sync connected ✓'); }catch{}
+    try{ await loadJobs(); }catch{}
+  };
+
+  __ws.onmessage = async (ev) => {
     try{
-      await loadJobs();
+      const msg = JSON.parse(ev.data);
+      if(msg?.type === 'jobs-changed'){
+        if(!window.__jobsRefreshSoon){
+          window.__jobsRefreshSoon = true;
+          setTimeout(async ()=>{
+            window.__jobsRefreshSoon = false;
+            try{ await loadJobs(); }catch{}
+          }, 250);
+        }
+      }
     }catch{}
-  }, 8000);
-}
+  };
 
-function stopJobsPolling(){
-  if(__jobsPollTimer){
-    clearInterval(__jobsPollTimer);
-    __jobsPollTimer = null;
+  __ws.onclose = () => {
+    __syncConnected = false;
+    setSyncStatus('disconnected');
+    try{ showToast('Live sync disconnected'); }catch{}
+    scheduleWsReconnect();
+  };
+
+  // Safety refresh every 60s
+  if(!__fallbackRefreshTimer){
+    __fallbackRefreshTimer = setInterval(async ()=>{
+      if(__syncConnected){
+        try{ await loadJobs(); }catch{}
+      }
+    }, 60000);
   }
 }
 
 async function startAutoReconnect(){
   if(__syncTimer) return;
-  setSyncStatus('connecting');
-  // First immediate check
-  const firstOk = await checkServerOnce();
-  if(firstOk){
-    __syncConnected = true;
-    setSyncStatus('connected');
-    startJobsPolling();
-  }else{
-    __syncConnected = false;
-    setSyncStatus('disconnected');
-  }
+  await connectWs();
+  __syncTimer = setInterval(async ()=>{
+    if(__ws && __ws.readyState === 1){
+      __syncConnected = true;
+      setSyncStatus('connected');
+      return;
+    }
+    if(!__wsReconnectTimer){
+      await connectWs();
+    }
+  }, 5000);
+}
+
 
   __syncTimer = setInterval(async ()=>{
     const ok = await checkServerOnce();
