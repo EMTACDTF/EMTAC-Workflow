@@ -361,7 +361,152 @@
     body.customerMode textarea{ min-height:120px; }
     body.customerMode .btn{ padding:14px 16px; font-size:16px; }
     body.customerMode .chip{ font-size:14px; }
-    </style>
+    
+
+/* =========================
+   UI Polish Pack (Cosmetic)
+   ========================= */
+
+:root{
+  --shadow-soft: 0 8px 30px rgba(0,0,0,.08);
+  --shadow-hover: 0 14px 40px rgba(0,0,0,.12);
+  --radius-xl: 18px;
+  --radius-lg: 14px;
+  --radius-md: 12px;
+}
+
+.topbarInner{
+  padding: 16px 18px;
+}
+.brand h1{
+  font-size: 17px;
+  letter-spacing: .2px;
+}
+.brand .sub{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top: 4px;
+}
+#appVersion{
+  display:inline-flex;
+  align-items:center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.actions{
+  gap: 8px;
+}
+.btn{
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease;
+}
+.btn:hover{
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--border) 55%, var(--text) 10%);
+}
+.btnPrimary{
+  box-shadow: var(--shadow-soft);
+}
+.btnPrimary:hover{
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+.btn:active{
+  transform: translateY(0px);
+  box-shadow: none;
+}
+
+.chip{
+  padding: 4px 10px;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.chip:hover{
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.5), var(--shadow-soft);
+}
+
+.panel, .col, .stat, .tile, .stickyUrgent{
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-soft);
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease;
+}
+.panel:hover, .tile:hover{
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
+  border-color: color-mix(in srgb, var(--border) 60%, var(--text) 10%);
+}
+
+.board{
+  gap: 12px;
+}
+.col{
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg) 12%);
+}
+.colHeader{
+  padding-bottom: 6px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--border) 70%, transparent);
+  margin-bottom: 10px;
+}
+.dropZone{
+  padding: 2px;
+  border-radius: var(--radius-lg);
+}
+.col.dragOver, .dropZone.dragOver{
+  outline: 2px solid color-mix(in srgb, var(--info) 55%, transparent);
+  outline-offset: 2px;
+  background: color-mix(in srgb, var(--info) 10%, var(--panel));
+}
+.tile{
+  border-radius: var(--radius-lg);
+}
+.tile:active{
+  transform: scale(.99);
+}
+
+/* Modals / overlays */
+.overlay{
+  background: rgba(0,0,0,.42);
+  backdrop-filter: blur(6px);
+}
+.modal{
+  border-radius: 22px;
+  box-shadow: 0 22px 70px rgba(0,0,0,.25);
+}
+.modalHeader{
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-top-left-radius: 22px;
+  border-top-right-radius: 22px;
+}
+
+/* Inputs polish */
+input, select, textarea{
+  border-radius: var(--radius-md);
+  transition: box-shadow .12s ease, border-color .12s ease;
+}
+input:focus, select:focus, textarea:focus{
+  outline: none;
+  border-color: color-mix(in srgb, var(--info) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
+}
+
+  </style>
 </head>
 <body>
   <div class="topbar">
