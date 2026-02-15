@@ -1,4 +1,14 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+
+
+// ---- Safety: log (and avoid blank app) on unexpected async errors ----
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED REJECTION]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+});
+
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 
@@ -9,6 +19,9 @@ autoUpdater.autoDownload = true;
 const path = require('path');
 const fs = require('fs');
 
+const http = require('http');
+const { URL } = require('url');
+let lanServer = null;
 let mainWindow;
 
 /**
@@ -35,6 +48,7 @@ function readJsonSafe(filePath, fallback) {
 }
 
 function writeJsonSafe(filePath, data) {
+  try{ fs.mkdirSync(path.dirname(filePath), { recursive: true }); }catch{}
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
 
@@ -49,6 +63,196 @@ function saveDb(db) {
   const { dbPath } = dataPaths();
   writeJsonSafe(dbPath, db);
 }
+
+/* ---------------------------
+   LAN LIVE SYNC (Mac = Master DB, Windows = Client)
+   - macOS app exposes HTTP API on port 3030 (LAN only)
+   - Windows app proxies CRUD to macOS server (using saved serverIp)
+---------------------------- */
+const LAN_PORT = 3030;
+
+function readBody(req){
+  return new Promise((resolve, reject)=>{
+    let data = '';
+    req.on('data', chunk => { data += chunk; if(data.length > 5_000_000) reject(new Error('Body too large')); });
+    req.on('end', ()=> resolve(data));
+    req.on('error', reject);
+  });
+}
+
+function json(res, code, obj){
+  const body = JSON.stringify(obj);
+  res.writeHead(code, {
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(body),
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.end(body);
+}
+
+function startLanServer(getMainWindow){
+  // Only Mac acts as master
+  if (process.platform !== 'darwin') return null;
+
+  const server = http.createServer(async (req, res) => {
+    try{
+      if(req.method === 'OPTIONS'){
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        });
+        return res.end();
+      }
+
+      const u = new URL(req.url, `http://${req.headers.host}`);
+
+      if(req.method === 'GET' && u.pathname === '/health'){
+        const v = app.getVersion();
+        return json(res, 200, { ok:true, role:'master', version:v, port:LAN_PORT, time:new Date().toISOString() });
+      }
+
+      if(req.method === 'GET' && u.pathname === '/jobs'){
+        const db = loadDb();
+        return json(res, 200, { ok:true, jobs: db.jobs || [] });
+      }
+
+      if(req.method === 'POST' && u.pathname === '/jobs'){
+        const raw = await readBody(req);
+        const payload = raw ? JSON.parse(raw) : {};
+        const db = loadDb();
+        const job = payload.job || payload;
+        if(!job || typeof job !== 'object') return json(res, 400, { ok:false, error:'Invalid job payload' });
+
+        // Ensure ID
+        if(!job.id) job.id = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+        job.updatedAt = Date.now();
+        job.createdAt = job.createdAt || Date.now();
+
+        db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
+        db.jobs.unshift(job);
+        saveDb(db);
+
+        try{
+          const win = getMainWindow?.();
+          if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'add', id: job.id });
+        }catch{}
+
+        return json(res, 200, { ok:true, job });
+      }
+
+      const jobIdMatch = u.pathname.match(/^\/jobs\/([^\/]+)$/);
+      if(jobIdMatch && (req.method === 'PUT' || req.method === 'DELETE')){
+        const id = decodeURIComponent(jobIdMatch[1]);
+        const db = loadDb();
+        db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
+        const idx = db.jobs.findIndex(j => String(j.id) === String(id));
+        if(idx === -1) return json(res, 404, { ok:false, error:'Job not found' });
+
+        if(req.method === 'DELETE'){
+          const removed = db.jobs.splice(idx, 1)[0];
+          saveDb(db);
+          try{
+            const win = getMainWindow?.();
+            if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'delete', id });
+          }catch{}
+          return json(res, 200, { ok:true, removedId: id });
+        }
+
+        // PUT
+        const raw = await readBody(req);
+        const payload = raw ? JSON.parse(raw) : {};
+        const patch = payload.patch || payload;
+        if(!patch || typeof patch !== 'object') return json(res, 400, { ok:false, error:'Invalid patch payload' });
+
+        const updated = { ...db.jobs[idx], ...patch, id: db.jobs[idx].id, updatedAt: Date.now() };
+        db.jobs[idx] = updated;
+        saveDb(db);
+
+        try{
+          const win = getMainWindow?.();
+          if(win?.webContents) win.webContents.send('jobs-updated', { source:'lan', action:'update', id });
+        }catch{}
+
+        return json(res, 200, { ok:true, job: updated });
+      }
+
+      return json(res, 404, { ok:false, error:'Not found' });
+    }catch(e){
+      return json(res, 500, { ok:false, error:String(e?.message || e) });
+    }
+  });
+
+  server.on('error', (e)=>{ console.error('[LAN] Server error', e); });
+
+  server.listen(LAN_PORT, '0.0.0.0', () => {
+    try{ console.log(`[LAN] Master DB server listening on http://0.0.0.0:${LAN_PORT}`); }catch{}
+  });
+
+  return server;
+}
+
+
+async function remoteFetch(path, options = {}){
+  const s = loadSettings();
+  const serverIp = s?.serverIp;
+  if(!serverIp) throw new Error('Server IP not set (Settings → Server IP)');
+  const method = (options.method || 'GET').toUpperCase();
+  const body = options.body || null;
+
+  const url = new URL(`http://${serverIp}:${LAN_PORT}${path}`);
+
+  // Prefer built-in fetch if available (newer Electron), else fallback to http.
+  if (typeof globalThis.fetch === 'function'){
+    const res = await fetch(url.toString(), {
+      method,
+      headers: { 'Content-Type':'application/json', ...(options.headers||{}) },
+      body
+    });
+    const jsonBody = await res.json().catch(()=>null);
+    if(!res.ok){
+      const msg = jsonBody?.error || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+    return jsonBody;
+  }
+
+  return await new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname + url.search,
+      method,
+      headers: { 'Content-Type':'application/json', ...(options.headers||{}) }
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        let parsed = null;
+        try{ parsed = data ? JSON.parse(data) : null; }catch{}
+        if(res.statusCode && res.statusCode >= 200 && res.statusCode < 300){
+          resolve(parsed);
+        } else {
+          const msg = parsed?.error || `HTTP ${res.statusCode}`;
+          reject(new Error(msg));
+        }
+      });
+    });
+    req.on('error', reject);
+    if(body) req.write(body);
+    req.end();
+  });
+}
+
+function isClientMode(){
+  // Windows acts as client when serverIp is configured
+  if(process.platform !== 'win32') return false;
+  const s = loadSettings();
+  return !!s?.serverIp;
+}
+
 
 function loadSettings() {
   const { settingsPath } = dataPaths();
@@ -135,7 +339,16 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  
+  // Start LAN master server on macOS
+  try{
+    if(!lanServer){
+      lanServer = startLanServer(()=>mainWindow);
+    }
+  }catch(e){
+    console.error('[LAN] Failed to start server', e);
+  }
+mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   // Wire updater events + check on startup
   setupAutoUpdates(mainWindow);
@@ -403,144 +616,122 @@ app.on('window-all-closed', () => {
 ---------------------------- */
 ipcMain.handle('ping', async () => ({ ok: true, ts: nowIso(), userData: app.getPath('userData') }));
 
+ipcMain.removeHandler('get-jobs');
 ipcMain.handle('get-jobs', async () => {
-  const db = loadDb();
-
-  // Auto-archive: if a Completed job is 30+ days old, move it to Archived category.
-  const MS_30_DAYS = 30 * 24 * 60 * 60 * 1000;
-  const now = Date.now();
-  let changed = false;
-
-  db.jobs = (db.jobs || []).map(j => {
-    const job = { ...j };
-    const isCompleted = job.status === 'Completed';
-    const completedSource = job.completedAtSource || '';
-    const isArchived = !!job.archived;
-
-    // Migration safety
-    if (isArchived && !job.completedAt) {
-      job.archived = false;
-      job.archivedAt = null;
-      changed = true;
+  try{
+    if(isClientMode()){
+      const r = await remoteFetch('/jobs');
+      return Array.isArray(r?.jobs) ? r.jobs : [];
     }
-
-    const completedAtMs = Date.parse(job.completedAt || 0) || 0;
-
-    if (isCompleted && !isArchived && completedAtMs && completedSource === 'user' && (now - completedAtMs) >= MS_30_DAYS) {
-      job.archived = true;
-      job.archivedAt = nowIso();
-      job.statusHistory = Array.isArray(job.statusHistory) ? job.statusHistory : [];
-      job.statusHistory.push({ at: nowIso(), message: 'Auto-archived (Completed 30+ days ago)' });
-      changed = true;
-    }
-    return job;
-  });
-
-  if (changed) saveDb(db);
-  return db.jobs;
+    const db = loadDb();
+    return Array.isArray(db.jobs) ? db.jobs : [];
+  }catch(e){
+    console.error('[get-jobs] failed', e);
+    return [];
+  }
 });
 
-ipcMain.handle('add-job', async (_event, job) => {
-  try {
-    validateJob(job);
-
+ipcMain.removeHandler('add-job');
+ipcMain.handle('add-job', async (_e, job) => {
+  try{
+    if(isClientMode()){
+      const r = await remoteFetch('/jobs', { method:'POST', body: JSON.stringify({ job }) });
+      return { success:true, job: r.job };
+    }
+    // Local (Mac / standalone)
     const db = loadDb();
-    const newJob = {
-      ...job,
-      jobNumber: getNextJobNumber(db),
-      id: makeId(),
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      completedAt: (job.status === 'Completed') ? nowIso() : (job.completedAt || null),
-      archived: !!job.archived,
-      archivedAt: job.archivedAt || null
-    };
-
+    db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
+    const newJob = { ...job };
+    if(!newJob.id) newJob.id = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+    newJob.createdAt = newJob.createdAt || Date.now();
+    newJob.updatedAt = Date.now();
     db.jobs.unshift(newJob);
     saveDb(db);
-
-    return { success: true, job: newJob };
-  } catch (err) {
-    return { success: false, error: String(err?.message || err) };
+    return { success:true, job: newJob };
+  }catch(e){
+    return { success:false, error:String(e?.message||e) };
   }
 });
 
-ipcMain.handle('update-job', async (_event, id, patch) => {
-  try {
-    if (!id || typeof id !== 'string') throw new Error('Invalid job id');
-    if (!patch || typeof patch !== 'object') throw new Error('Invalid patch');
-
+ipcMain.removeHandler('update-job');
+ipcMain.handle('update-job', async (_e, id, patch) => {
+  try{
+    if(isClientMode()){
+      const r = await remoteFetch(`/jobs/${encodeURIComponent(id)}`, { method:'PUT', body: JSON.stringify({ patch }) });
+      return { success:true, job: r.job };
+    }
     const db = loadDb();
-    const idx = db.jobs.findIndex(j => j.id === id);
-    if (idx === -1) throw new Error('Job not found');
-
-    if ('quantity' in patch) patch.quantity = ensureNumberLike(patch.quantity, 'quantity', { allowBlank: true, defaultValue: db.jobs[idx].quantity ?? 1 });
-
-    const updated = {
-      ...db.jobs[idx],
-      ...patch,
-      updatedAt: nowIso()
-    };
-
-    // If status becomes Completed, store completedAt for archive aging.
-    if (updated.status === 'Completed' && !updated.completedAt) {
-      updated.completedAt = nowIso();
-      if (!updated.completedAtSource) updated.completedAtSource = 'system';
-    }
-    if (updated.status === 'Completed' && patch.completedAtSource) {
-      updated.completedAtSource = String(patch.completedAtSource);
-    }
-
-    // If job is re-opened (status not Completed), clear archived/completed timestamps.
-    if (updated.status !== 'Completed') {
-      if (updated.completedAt) updated.completedAt = null;
-      if (updated.completedAtSource) updated.completedAtSource = null;
-      if (updated.archived) updated.archived = false;
-      if (updated.archivedAt) updated.archivedAt = null;
-    }
-
-    db.jobs[idx] = updated;
+    db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
+    const idx = db.jobs.findIndex(j => String(j.id) === String(id));
+    if(idx === -1) return { success:false, error:'Job not found' };
+    db.jobs[idx] = { ...db.jobs[idx], ...patch, id: db.jobs[idx].id, updatedAt: Date.now() };
     saveDb(db);
-
-    return { success: true, job: updated };
-  } catch (err) {
-    return { success: false, error: String(err?.message || err) };
+    return { success:true, job: db.jobs[idx] };
+  }catch(e){
+    return { success:false, error:String(e?.message||e) };
   }
 });
 
-ipcMain.handle('delete-job', async (_event, id) => {
-  try {
-    if (!id || typeof id !== 'string') throw new Error('Invalid job id');
 
+ipcMain.removeHandler('delete-job');
+ipcMain.handle('delete-job', async (_e, id) => {
+  try{
+    if(isClientMode()){
+      const r = await remoteFetch(`/jobs/${encodeURIComponent(id)}`, { method:'DELETE' });
+      return { success:true, removedId: r.removedId };
+    }
     const db = loadDb();
-    const before = db.jobs.length;
-    db.jobs = db.jobs.filter(j => j.id !== id);
-
-    if (db.jobs.length === before) throw new Error('Job not found');
-
+    db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
+    const idx = db.jobs.findIndex(j => String(j.id) === String(id));
+    if(idx === -1) return { success:false, error:'Job not found' };
+    db.jobs.splice(idx, 1);
     saveDb(db);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: String(err?.message || err) };
+    return { success:true, removedId: id };
+  }catch(e){
+    return { success:false, error:String(e?.message||e) };
   }
 });
 
 /* ---------------------------
    SETTINGS IPC
 ---------------------------- */
-ipcMain.handle('get-settings', async () => {
-  return loadSettings();
+
+ipcMain.removeHandler('ping-server');
+ipcMain.handle('ping-server', async ()=>{
+  try{
+    const r = await remoteFetch('/health');
+    return { success:true, health:r };
+  }catch(e){
+    return { success:false, error:String(e?.message||e) };
+  }
 });
 
-ipcMain.handle('save-settings', async (_event, settings) => {
-  try {
-    const next = {
-      serverIp: (settings?.serverIp || '').toString().trim()
-    };
-    saveSettings(next);
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: String(err?.message || err) };
+
+ipcMain.removeHandler('get-settings');
+ipcMain.handle('get-settings', async () => {
+  try{
+    const s = loadSettings();
+    const { settingsPath } = dataPaths();
+    return { success:true, settings:s, settingsPath };
+  }catch(e){
+    return { success:false, error:String(e?.message||e) };
+  }
+});
+
+
+
+ipcMain.removeHandler('save-settings');
+ipcMain.handle('save-settings', async (_e, settings) => {
+  try{
+    const current = loadSettings();
+    const merged = { ...(current||{}), ...(settings||{}) };
+    saveSettings(merged);
+    const { settingsPath } = dataPaths();
+    console.log('[settings] saved', merged, '->', settingsPath);
+    return { success:true, settings: merged, settingsPath };
+  }catch(e){
+    console.error('[settings] save failed', e);
+    return { success:false, error:String(e?.message||e) };
   }
 });
 

@@ -1257,10 +1257,26 @@ function wireDraftAutosave(){
 
   
 
+
+
+async function apiGetSettingsSafe(){
+  try{
+    if(!window.api || typeof window.api.getSettings !== 'function') return {};
+    const r = await window.api.getSettings();
+    if(r && typeof r === 'object' && 'success' in r){
+      return r.success ? (r.settings || {}) : {};
+    }
+    return r || {};
+  }catch(e){
+    console.warn('apiGetSettingsSafe failed', e);
+    return {};
+  }
+}
+
 async function loadSettingsIntoUI(){
   try{
     if(!window.api || typeof window.api.getSettings !== 'function') return;
-    const s = await window.api.getSettings();
+    const s = await apiGetSettingsSafe();
     const ipEl = document.getElementById('serverIp');
     if(ipEl) ipEl.value = (s?.serverIp || '');
   }catch(e){
@@ -1439,6 +1455,9 @@ async function refreshAppVersion(){
   }
 }
 
+
+  
+    function showToast(msg){ alert(msg); }
 
   // ---- Updates UI ----
 function setUpdateChip(text, show=true){
@@ -2347,15 +2366,46 @@ document.getElementById('dueDate').value = '';
     }
 
     // ---- Settings ----
-    async function saveSettings(){
-      const serverIp = (document.getElementById('serverIpModal') || document.getElementById('serverIp')).value.trim();
-      document.getElementById('serverIp').value = serverIp;
-      const result = await window.api.saveSettings({ serverIp });
-      if (result?.success) alert("Settings saved");
-      else alert("Settings save failed: " + (result?.error || 'Unknown error'));
+    
+async function saveSettings(){
+  try{
+    const serverIp = getServerIpValue();
+    if(!window.api || typeof window.api.saveSettings !== 'function'){
+      alert('Save settings API missing.');
+      return;
     }
+    const r = await window.api.saveSettings({ serverIp });
+    if(r?.success){
+      showToast('Settings saved ✓');
+      // Re-load to confirm it persisted
+      await loadSettingsIntoUI();
+    }else{
+      alert('Could not save settings: ' + (r?.error || 'Unknown error'));
+    }
+  }catch(e){
+    alert('Could not save settings: ' + String(e?.message || e));
+  }
+}
 
-    function openSettings(){
+
+    
+
+// ---- Settings helpers (robust across UI revisions) ----
+function getServerIpInputEl(){
+  return document.getElementById('serverIpModal') || document.getElementById('serverIp');
+}
+function getServerIpValue(){
+  const el = getServerIpInputEl();
+  return el ? (el.value || '').trim() : '';
+}
+function setServerIpValue(v){
+  const el1 = document.getElementById('serverIpModal');
+  const el2 = document.getElementById('serverIp');
+  if(el1) el1.value = v || '';
+  if(el2) el2.value = v || '';
+}
+
+function openSettings(){
       const ov = document.getElementById('settingsOverlay');
       if (!ov) return;
       // preload modal input from hidden field
@@ -2363,6 +2413,7 @@ document.getElementById('dueDate').value = '';
       const dest = document.getElementById('serverIpModal');
       if (dest && src) dest.value = src.value || '';
       ov.style.display = 'flex';
+      loadSettingsIntoUI();
     }
     function closeSettings(){
       const ov = document.getElementById('settingsOverlay');
@@ -2743,6 +2794,7 @@ document.getElementById('dueDate').value = '';
     fillStatusSelect(document.getElementById('statusSelect'), DEFAULT_PHASES[0]);
     fillStatusSelect(document.getElementById('cardStatusSelect'), DEFAULT_PHASES[0]);
     refreshAppVersion();
+    loadSettingsIntoUI();
     loadJobs();
     // Default to Customer view on startup
     customerMode = true;
