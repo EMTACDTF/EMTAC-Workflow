@@ -550,6 +550,43 @@ input:focus, select:focus, textarea:focus{
   transform: scale(1.28);
   transform-origin: center center;
 }
+
+
+/* Live Sync indicator */
+.syncIndicator{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:700;
+  border:1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.8);
+  color: rgba(0,0,0,.72);
+  user-select:none;
+  white-space:nowrap;
+}
+body.dark .syncIndicator{
+  border-color: rgba(255,255,255,.14);
+  background: rgba(0,0,0,.25);
+  color: rgba(255,255,255,.8);
+}
+.syncDot{
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  display:inline-block;
+  box-shadow: 0 0 0 3px rgba(0,0,0,.06) inset;
+}
+body.dark .syncDot{
+  box-shadow: 0 0 0 3px rgba(255,255,255,.08) inset;
+}
+.syncIndicator.connected .syncDot{ background: #22c55e; }  /* green */
+.syncIndicator.disconnected .syncDot{ background: #ef4444; } /* red */
+.syncIndicator.connecting .syncDot{ background: #f59e0b; } /* amber */
+
+
 </style>
 </head>
 <body>
@@ -559,7 +596,10 @@ input:focus, select:focus, textarea:focus{
         <div class="logo"><img src="build/icon.png" class="logoImg" alt="EMTAC"></div>
         <div>
           <h1>EMTAC Job Cards</h1>
-          <div class="sub"><span id="appVersion" class="versionPill">v0.0.0</span></div>
+          <div class="sub"><span id="appVersion" class="versionPill">v0.0.0</span>
+          <div id="syncIndicator" class="syncIndicator disconnected" title="Live Sync status">
+            <span class="syncDot"></span><span id="syncText">Disconnected</span>
+          </div></div>
         </div>
       </div>
       <div class="actions">
@@ -1458,6 +1498,93 @@ async function refreshAppVersion(){
 
   
     function showToast(msg){ alert(msg); }
+
+  
+
+// ---- Live Sync: auto reconnect + status indicator ----
+let __syncConnected = false;
+let __syncTimer = null;
+let __jobsPollTimer = null;
+
+function setSyncStatus(state){
+  const el = document.getElementById('syncIndicator');
+  const txt = document.getElementById('syncText');
+  if(!el || !txt) return;
+  el.classList.remove('connected','disconnected','connecting');
+  el.classList.add(state);
+  if(state === 'connected') txt.textContent = 'Connected';
+  else if(state === 'connecting') txt.textContent = 'Connecting…';
+  else txt.textContent = 'Disconnected';
+}
+
+async function checkServerOnce(){
+  try{
+    if(!window.api || typeof window.api.pingServer !== 'function'){
+      // No LAN feature available
+      setSyncStatus('disconnected');
+      __syncConnected = false;
+      return false;
+    }
+    const r = await window.api.pingServer();
+    const ok = !!(r && (r.success === true || r.ok === true || r.health?.ok === true));
+    return ok;
+  }catch{
+    return false;
+  }
+}
+
+function startJobsPolling(){
+  // Light polling so Mac-added jobs appear without restart.
+  if(__jobsPollTimer) return;
+  __jobsPollTimer = setInterval(async ()=>{
+    if(!__syncConnected) return;
+    try{
+      await loadJobs();
+    }catch{}
+  }, 8000);
+}
+
+function stopJobsPolling(){
+  if(__jobsPollTimer){
+    clearInterval(__jobsPollTimer);
+    __jobsPollTimer = null;
+  }
+}
+
+async function startAutoReconnect(){
+  if(__syncTimer) return;
+  setSyncStatus('connecting');
+  // First immediate check
+  const firstOk = await checkServerOnce();
+  if(firstOk){
+    __syncConnected = true;
+    setSyncStatus('connected');
+    startJobsPolling();
+  }else{
+    __syncConnected = false;
+    setSyncStatus('disconnected');
+  }
+
+  __syncTimer = setInterval(async ()=>{
+    const ok = await checkServerOnce();
+    if(ok && !__syncConnected){
+      __syncConnected = true;
+      setSyncStatus('connected');
+      startJobsPolling();
+      try{ showToast('Live sync connected ✓'); }catch{}
+      try{ await loadJobs(); }catch{}
+    }else if(!ok && __syncConnected){
+      __syncConnected = false;
+      setSyncStatus('disconnected');
+      stopJobsPolling();
+      try{ showToast('Live sync disconnected'); }catch{}
+    }else{
+      // stable state; keep indicator
+      setSyncStatus(__syncConnected ? 'connected' : 'disconnected');
+    }
+  }, 3000);
+}
+
 
   // ---- Updates UI ----
 function setUpdateChip(text, show=true){
@@ -2795,6 +2922,7 @@ function openSettings(){
     fillStatusSelect(document.getElementById('cardStatusSelect'), DEFAULT_PHASES[0]);
     refreshAppVersion();
     loadSettingsIntoUI();
+    startAutoReconnect();
     loadJobs();
     // Default to Customer view on startup
     customerMode = true;
