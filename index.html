@@ -2591,20 +2591,27 @@ document.getElementById('dueDate').value = '';
 async function saveSettings(){
   try{
     const serverIp = getServerIpValue();
+    const lanKey = (document.getElementById('lanKeyModal')?.value || '').trim();
+
     if(!window.api || typeof window.api.saveSettings !== 'function'){
       alert('Save settings API missing.');
       return;
     }
-    const r = await window.api.saveSettings({ serverIp });
+
+    const r = await window.api.saveSettings({ serverIp, lanKey });
+
     if(r?.success){
       showToast('Settings saved ✓');
       // Re-load to confirm it persisted
       await loadSettingsIntoUI();
+      try{ addSyncLog('ok','SETTINGS','Saved'); }catch{}
     }else{
       alert('Could not save settings: ' + (r?.error || 'Unknown error'));
+      try{ addSyncLog('err','SETTINGS','Save failed'); }catch{}
     }
   }catch(e){
     alert('Could not save settings: ' + String(e?.message || e));
+    try{ addSyncLog('err','SETTINGS','Save exception'); }catch{}
   }
 }
 
@@ -3107,8 +3114,10 @@ function setLanKeyValue(v){
 }
 
 function generateLanKey(){
-  // 24 chars base36
-  const s = Array.from(crypto.getRandomValues(new Uint32Array(6))).map(n=>n.toString(36).padStart(4,'0')).join('').slice(0,24);
+  const s = Array.from(crypto.getRandomValues(new Uint32Array(6)))
+    .map(n=>n.toString(36).padStart(4,'0'))
+    .join('')
+    .slice(0,24);
   setLanKeyValue(s);
   try{ addSyncLog('info','KEY','Generated'); }catch{}
   try{ showToast('LAN key generated'); }catch{}
