@@ -26,6 +26,22 @@ autoUpdater.autoDownload = true;
 const path = require('path');
 const fs = require('fs');
 
+
+function resolveAppIcon() {
+  // Windows titlebar icon expects .ico, but we try a few fallbacks for safety.
+  // Dev: __dirname is project folder. Prod: __dirname is inside the packaged app.
+  const candidates = [
+    path.join(__dirname, 'build', 'icon.ico'),
+    path.join(__dirname, 'build', 'icon.png'),
+    path.join(__dirname, 'build', 'icon.icns')
+  ];
+  for (const p of candidates) {
+    try { if (fs.existsSync(p)) return p; } catch {}
+  }
+  return undefined; // let Electron use default if none found
+}
+
+
 const http = require('http');
 const { URL } = require('url');
 let lanServer = null;
@@ -478,6 +494,7 @@ function validateJob(job) {
 function createWindow() {
   mainWindow = new BrowserWindow({
     title: 'EMTAC WORKFLOW',
+    icon: resolveAppIcon(),
     width: 1300,
     height: 860,
     webPreferences: {
