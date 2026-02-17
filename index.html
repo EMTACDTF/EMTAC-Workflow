@@ -665,7 +665,7 @@ body.dark .syncLogList{
         <div class="logo"><img src="build/icon.png" class="logoImg" alt="EMTAC"></div>
         <div>
           <h1>EMTAC Job Cards</h1>
-          <div class="sub"><span id="appVersion" class="versionPill">v0.0.0</span>
+          <div class="sub"><span id="appVersion" class="versionPill">v—</span>
           <div id="syncIndicator" class="syncIndicator disconnected" title="Live Sync status">
             <span class="syncDot"></span><span id="syncText">Disconnected</span>
           <span class="syncSep">•</span><span class="syncClients">Clients: <span id="clientCount">0</span></span></div></div>
@@ -853,7 +853,8 @@ body.dark .syncLogList{
         </div>
 
         <div class="searchRow">
-          <input id="searchInput" placeholder="Search jobs…" oninput="renderAll()">
+          <input id="searchInput" placeholder="Search (Job Number, customer, phone, description)…" oninput="renderAll()">
+          <button class="btn btnSmall" id="btnClearSearch" title="Clear search & filters" onclick="clearJobFilters()">Clear</button>
           <select id="sortSelect" onchange="onSortChange(this.value)">
             <option value="smart">Sort: Smart</option>
             <option value="newest">Sort: Newest</option>
@@ -873,6 +874,13 @@ body.dark .syncLogList{
             <option value="Normal">Normal</option>
             <option value="Low">Low</option>
           </select>
+          <select id="dueFilter" onchange="renderAll()">
+            <option value="ALLDUE">All Due</option>
+            <option value="OVERDUE">Overdue</option>
+            <option value="TODAY">Due Today</option>
+            <option value="UPCOMING">Upcoming</option>
+            <option value="NODUE">No Due Date</option>
+          </select>
         </div>
         </div>
 
@@ -889,7 +897,10 @@ body.dark .syncLogList{
   <div id="overlay" class="overlay" onclick="overlayClick(event)">
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modalHeader">
-        <h3 id="cardTitle">Job Card</h3>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <h3 id="cardTitle">Job Card</h3>
+          <span class="chip" id="cardJobNumber" style="display:none;"></span>
+        </div>
         <div class="rowInline">
           <button class="btn btnSmall" onclick="printJobCardPdf()">Job Card PDF</button>
           <button class="btn btnSmall" onclick="printJobCardToPrinter()">Print to Printer</button>
@@ -1565,19 +1576,29 @@ async function copyDiagnostics(){
 
 // ---- Display App Version (robust) ----
 async function refreshAppVersion(){
+  const el = document.getElementById('appVersion');
+  if(!el) return;
+
+  // Default placeholder (avoids showing v0.0.0 when something goes wrong)
+  el.textContent = 'v—';
+
   try{
-    const el = document.getElementById('appVersion');
-    if(!el) return;
     if(window.api && typeof window.api.getVersion === 'function'){
       const v = await window.api.getVersion();
-      if(v) el.textContent = 'v' + v;
+      if(v && v !== '0.0.0'){
+        el.textContent = 'v' + v;
+      } else {
+        el.textContent = 'vUnknown';
+      }
     } else {
-      el.textContent = '';
+      el.textContent = 'vUnknown';
     }
   }catch(e){
     console.warn('Version load failed:', e);
+    el.textContent = 'vUnknown';
   }
 }
+
 
 
   
@@ -1911,6 +1932,7 @@ function bindUpdateStatus(){
       const q = document.getElementById('searchInput').value.trim().toLowerCase();
       const tf = document.getElementById('typeFilter').value;
       const pf = document.getElementById('priorityFilter').value;
+      const df = (document.getElementById('dueFilter')?.value) || 'ALLDUE';
 
       const searchOk = !q || (()=>{
         const hay = [
@@ -1923,7 +1945,15 @@ function bindUpdateStatus(){
       const typeOk = (tf === 'ALL') ? true : (job.type === tf);
       const prioOk = (pf === 'ALL') ? true : ((job.priority || 'Normal') === pf);
 
-      return searchOk && typeOk && prioOk;
+      const ds = dueState(job); // 'overdue' | 'today' | 'upcoming' | 'none'
+      const dueOk = (df === 'ALLDUE') ? true : (
+        (df === 'OVERDUE' && ds === 'overdue') ||
+        (df === 'TODAY' && ds === 'today') ||
+        (df === 'UPCOMING' && ds === 'upcoming') ||
+        (df === 'NODUE' && ds === 'none')
+      );
+
+      return searchOk && typeOk && prioOk && dueOk;
     }
 
     function getViewJobs(){
@@ -2057,7 +2087,7 @@ function bindUpdateStatus(){
       const numberTag = document.createElement('div');
       numberTag.className = 'chip';
       numberTag.style.marginBottom = '6px';
-      numberTag.textContent = job.jobNumber ? ('Job No: ' + job.jobNumber) : '';
+      numberTag.textContent = job.jobNumber ? ('Job Number: ' + job.jobNumber) : '';
 
       const header = document.createElement('div');
       header.className = 'jobTop jobHeader';
@@ -2305,7 +2335,21 @@ clearJobDraft();
       host.appendChild(board);
     }
 
-    function renderAll(){
+    
+    function clearJobFilters(){
+      const s = document.getElementById('searchInput');
+      const tf = document.getElementById('typeFilter');
+      const pf = document.getElementById('priorityFilter');
+      const df = document.getElementById('dueFilter');
+      if (s) s.value = '';
+      if (tf) tf.value = 'ALL';
+      if (pf) pf.value = 'ALL';
+      if (df) df.value = 'ALLDUE';
+      renderAll();
+      if (s) s.focus();
+    }
+
+function renderAll(){
       syncStatusUI();
       renderDashboard();
       if (currentView === 'board') renderBoard();
@@ -2686,6 +2730,17 @@ function openSettings(){
 
       document.getElementById('cardTitle').textContent =
         `Job Card: ${cardJob.customerName || '(No Customer)'} — ${cardJob.description || ''}`;
+
+      // Job Number (shown on overlay + also on job cards list)
+      const jn = (cardJob.jobNumber || '').trim();
+      const jnEl = document.getElementById('cardJobNumber');
+      if (jn){
+        jnEl.style.display = 'inline-flex';
+        jnEl.textContent = `Job Number: ${jn}`;
+      } else {
+        jnEl.style.display = 'none';
+        jnEl.textContent = '';
+      }
 
       const cust = [
         cardJob.customerName ? `Name: ${cardJob.customerName}` : 'Name: -',

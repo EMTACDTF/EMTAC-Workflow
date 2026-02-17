@@ -419,7 +419,7 @@ function nowIso() {
 
 function getNextJobNumber(db){
   const PREFIX = "EM-";
-  const START = 2313; // EM-02313
+  const START = 2435; // EM-2435
 
   if (typeof db.nextJobSeq !== 'number'){
     // Try derive from existing jobs
@@ -436,8 +436,7 @@ function getNextJobNumber(db){
   const current = db.nextJobSeq;
   db.nextJobSeq += 1;
 
-  const padded = String(current).padStart(5,'0');
-  return PREFIX + padded;
+  return PREFIX + String(current);
 }
 
 function makeId() {
@@ -592,12 +591,48 @@ ipcMain.handle('quit-and-install', async () => {
 });
 
 ipcMain.handle('get-version', async () => {
+  // Robust version getter:
+  // - app.getVersion() works in most cases
+  // - some packaged/edge cases may return 0.0.0, so we fall back to package.json
   try{
-    return app.getVersion();
-  }catch{
-    return 'Unknown';
+    const v = app.getVersion?.();
+    if(v && v !== '0.0.0') return v;
+  }catch(e){
+    // continue to fallbacks
   }
+
+  // Fallback #1: read package.json from the app path (works in packaged apps)
+  try{
+    const pjPath = path.join(app.getAppPath(), 'package.json');
+    if(fs.existsSync(pjPath)){
+      const pj = JSON.parse(fs.readFileSync(pjPath, 'utf8'));
+      if(pj?.version) return pj.version;
+    }
+  }catch(e){
+    // continue
+  }
+
+  // Fallback #2: read package.json from current directory (works in dev)
+  try{
+    const pjPath2 = path.join(__dirname, 'package.json');
+    if(fs.existsSync(pjPath2)){
+      const pj2 = JSON.parse(fs.readFileSync(pjPath2, 'utf8'));
+      if(pj2?.version) return pj2.version;
+    }
+  }catch(e){
+    // continue
+  }
+
+  // Fallback #3: npm env
+  try{
+    if(process.env.npm_package_version) return process.env.npm_package_version;
+  }catch(e){
+    // ignore
+  }
+
+  return 'Unknown';
 });
+
 
 ipcMain.handle('get-db-info', async () => {
   try{
@@ -792,6 +827,7 @@ ipcMain.handle('add-job', async (_e, job) => {
     const db = loadDb();
     db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
     const newJob = { ...job };
+    if(!newJob.jobNumber) newJob.jobNumber = getNextJobNumber(db);
     if(!newJob.id) newJob.id = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
     newJob.createdAt = newJob.createdAt || Date.now();
     newJob.updatedAt = Date.now();
