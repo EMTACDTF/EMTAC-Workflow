@@ -27,19 +27,28 @@ const path = require('path');
 const fs = require('fs');
 
 
+
 function resolveAppIcon() {
-  // Windows titlebar icon expects .ico, but we try a few fallbacks for safety.
-  // Dev: __dirname is project folder. Prod: __dirname is inside the packaged app.
+  // Windows titlebar icon prefers .ico. In packaged builds, resources live under process.resourcesPath.
   const candidates = [
+    // Packaged app resources
+    path.join(process.resourcesPath || '', 'build', 'icon.ico'),
+    path.join(process.resourcesPath || '', 'build', 'icon.png'),
+    path.join(process.resourcesPath || '', 'build', 'icon.icns'),
+    // Dev / unpacked
     path.join(__dirname, 'build', 'icon.ico'),
     path.join(__dirname, 'build', 'icon.png'),
     path.join(__dirname, 'build', 'icon.icns')
   ];
+
   for (const p of candidates) {
-    try { if (fs.existsSync(p)) return p; } catch {}
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch {}
   }
-  return undefined; // let Electron use default if none found
+  return undefined;
 }
+
 
 
 const http = require('http');
