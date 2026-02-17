@@ -26,31 +26,6 @@ autoUpdater.autoDownload = true;
 const path = require('path');
 const fs = require('fs');
 
-
-
-function resolveAppIcon() {
-  // Windows titlebar icon prefers .ico. In packaged builds, resources live under process.resourcesPath.
-  const candidates = [
-    // Packaged app resources
-    path.join(process.resourcesPath || '', 'build', 'icon.ico'),
-    path.join(process.resourcesPath || '', 'build', 'icon.png'),
-    path.join(process.resourcesPath || '', 'build', 'icon.icns'),
-    // Dev / unpacked
-    path.join(__dirname, 'build', 'icon.ico'),
-    path.join(__dirname, 'build', 'icon.png'),
-    path.join(__dirname, 'build', 'icon.icns')
-  ];
-
-  for (const p of candidates) {
-    try {
-      if (p && fs.existsSync(p)) return p;
-    } catch {}
-  }
-  return undefined;
-}
-
-
-
 const http = require('http');
 const { URL } = require('url');
 let lanServer = null;
@@ -444,7 +419,7 @@ function nowIso() {
 
 function getNextJobNumber(db){
   const PREFIX = "EM-";
-  const START = 2435; // EM-2435
+  const START = 2313; // EM-02313
 
   if (typeof db.nextJobSeq !== 'number'){
     // Try derive from existing jobs
@@ -461,7 +436,8 @@ function getNextJobNumber(db){
   const current = db.nextJobSeq;
   db.nextJobSeq += 1;
 
-  return PREFIX + String(current);
+  const padded = String(current).padStart(5,'0');
+  return PREFIX + padded;
 }
 
 function makeId() {
@@ -503,7 +479,6 @@ function validateJob(job) {
 function createWindow() {
   mainWindow = new BrowserWindow({
     title: 'EMTAC WORKFLOW',
-    icon: resolveAppIcon(),
     width: 1300,
     height: 860,
     webPreferences: {
@@ -617,48 +592,12 @@ ipcMain.handle('quit-and-install', async () => {
 });
 
 ipcMain.handle('get-version', async () => {
-  // Robust version getter:
-  // - app.getVersion() works in most cases
-  // - some packaged/edge cases may return 0.0.0, so we fall back to package.json
   try{
-    const v = app.getVersion?.();
-    if(v && v !== '0.0.0') return v;
-  }catch(e){
-    // continue to fallbacks
+    return app.getVersion();
+  }catch{
+    return 'Unknown';
   }
-
-  // Fallback #1: read package.json from the app path (works in packaged apps)
-  try{
-    const pjPath = path.join(app.getAppPath(), 'package.json');
-    if(fs.existsSync(pjPath)){
-      const pj = JSON.parse(fs.readFileSync(pjPath, 'utf8'));
-      if(pj?.version) return pj.version;
-    }
-  }catch(e){
-    // continue
-  }
-
-  // Fallback #2: read package.json from current directory (works in dev)
-  try{
-    const pjPath2 = path.join(__dirname, 'package.json');
-    if(fs.existsSync(pjPath2)){
-      const pj2 = JSON.parse(fs.readFileSync(pjPath2, 'utf8'));
-      if(pj2?.version) return pj2.version;
-    }
-  }catch(e){
-    // continue
-  }
-
-  // Fallback #3: npm env
-  try{
-    if(process.env.npm_package_version) return process.env.npm_package_version;
-  }catch(e){
-    // ignore
-  }
-
-  return 'Unknown';
 });
-
 
 ipcMain.handle('get-db-info', async () => {
   try{
@@ -853,7 +792,6 @@ ipcMain.handle('add-job', async (_e, job) => {
     const db = loadDb();
     db.jobs = Array.isArray(db.jobs) ? db.jobs : [];
     const newJob = { ...job };
-    if(!newJob.jobNumber) newJob.jobNumber = getNextJobNumber(db);
     if(!newJob.id) newJob.id = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
     newJob.createdAt = newJob.createdAt || Date.now();
     newJob.updatedAt = Date.now();
