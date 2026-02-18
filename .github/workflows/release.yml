@@ -1,8 +1,9 @@
 name: Build & Publish (macOS + Windows)
 
 on:
+  # electron-builder can create releases as drafts first; "created" ensures CI runs even if not published yet.
   release:
-    types: [published]
+    types: [created, published, released]
   workflow_dispatch:
 
 permissions:
@@ -18,12 +19,10 @@ jobs:
         os: [macos-latest, windows-latest]
 
     steps:
-      # IMPORTANT:
-      # When triggered by a Release, we must check out the *tag* that was released,
-      # so the build matches the release version (vX.Y.Z).
       - name: Checkout (release tag or branch)
         uses: actions/checkout@v4
         with:
+          # If this is a Release event, build the tag associated with the release.
           ref: ${{ github.event.release.tag_name || github.ref_name }}
 
       - name: Setup Node
