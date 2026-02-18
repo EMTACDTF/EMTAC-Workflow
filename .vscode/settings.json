@@ -1,0 +1,32 @@
+{
+  "files.exclude": {
+    "**/*.backup": true,
+    "**/*.bak": true,
+    "**/*.old": true,
+    "**/*.tmp": true,
+    "**/*.orig": true,
+    "**/*~": true,
+    "**/*.swp": true,
+    "**/*.swo": true,
+
+    "**/*copy*": true,
+    "**/*Copy*": true,
+    "**/*COPY*": true,
+    "**/*_backup*": true,
+    "**/*_BACKUP*": true,
+    "**/*-backup*": true,
+    "**/*-BACKUP*": true,
+
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/out": true,
+    "**/release": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/out": true,
+    "**/release": true
+  }
+}
