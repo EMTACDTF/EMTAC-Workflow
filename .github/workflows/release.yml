@@ -1,10 +1,16 @@
 name: Build & Publish (macOS + Windows)
 
 on:
-  # electron-builder can create releases as drafts first; "created" ensures CI runs even if not published yet.
+  # Run when a GitHub Release is created or published (electron-builder sometimes creates releases as drafts/created first)
   release:
-    types: [created, published, released]
+    types: [created, published]
+  # Allow manual runs with an optional tag input (so you can target an existing release like v1.1.18)
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build/publish to (example: v1.1.18). Leave blank to use the selected branch.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -19,11 +25,22 @@ jobs:
         os: [macos-latest, windows-latest]
 
     steps:
-      - name: Checkout (release tag or branch)
+      - name: Determine ref to build
+        id: ref
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "ref=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            echo "ref=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout (tag/branch)
         uses: actions/checkout@v4
         with:
-          # If this is a Release event, build the tag associated with the release.
-          ref: ${{ github.event.release.tag_name || github.ref_name }}
+          ref: ${{ steps.ref.outputs.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,16 +51,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Publish artifacts into the GitHub Release that triggered this workflow.
-      # Use publish:* (NOT release:*) so CI does not bump versions.
+      - name: Show build version (sanity check)
+        shell: bash
+        run: |
+          node -p "require('./package.json').version"
+          echo "Building ref: ${{ steps.ref.outputs.ref }}"
+
+      # Publish artifacts into the GitHub Release.
+      # We use publish:* (NOT release:*) so CI does not bump versions.
       - name: Publish (macOS)
         if: matrix.os == 'macos-latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run publish:mac
 
       - name: Publish (Windows)
         if: matrix.os == 'windows-latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run publish:win
