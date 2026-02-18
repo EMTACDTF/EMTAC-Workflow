@@ -1,4 +1,4 @@
-name: Build & Release (macOS + Windows)
+name: Build & Publish (macOS + Windows)
 
 on:
   release:
@@ -18,8 +18,13 @@ jobs:
         os: [macos-latest, windows-latest]
 
     steps:
-      - name: Checkout
+      # IMPORTANT:
+      # When triggered by a Release, we must check out the *tag* that was released,
+      # so the build matches the release version (vX.Y.Z).
+      - name: Checkout (release tag or branch)
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref_name }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -31,7 +36,7 @@ jobs:
         run: npm ci
 
       # Publish artifacts into the GitHub Release that triggered this workflow.
-      # We use publish:* (NOT release:*) so CI does not bump versions.
+      # Use publish:* (NOT release:*) so CI does not bump versions.
       - name: Publish (macOS)
         if: matrix.os == 'macos-latest'
         env:
