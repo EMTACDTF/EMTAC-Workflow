@@ -26,7 +26,10 @@ contextBridge.exposeInMainWorld('api', {
   getDbInfo: () => ipcRenderer.invoke('get-db-info'),
   getVersion: () => ipcRenderer.invoke('get-version'),
 
-  // Printer
+  
+  // Assets (packaged-safe)
+  getAssetUrl: (filename) => ipcRenderer.invoke('get-asset-url', filename),
+// Printer
   printJobCardToPrinter: (payload) => ipcRenderer.invoke('print-job-card', payload),
 
   // Updates

@@ -679,7 +679,7 @@ body.dark .syncLogList{
   <div class="topbar">
     <div class="topbarInner">
       <div class="brand">
-        <div class="logo"><img src="build/icon.png" class="logoImg" alt="EMTAC"></div>
+        <div class="logo"><img src="build/icon.png" class="logoImg" alt="EMTAC" id="headerLogo"></div>
         <div>
           <h1>EMTAC Job Cards</h1>
           <div class="sub"><span id="appVersion" class="versionPill">v0.0.0</span>
@@ -3039,6 +3039,30 @@ function openSettings(){
     fillStatusSelect(document.getElementById('statusSelect'), DEFAULT_PHASES[0]);
     fillStatusSelect(document.getElementById('cardStatusSelect'), DEFAULT_PHASES[0]);
     refreshAppVersion();
+    // ---- Header logo: packaged-safe load ----
+(async function loadHeaderLogo(){
+  try{
+    const img = document.getElementById('headerLogo') || document.querySelector('.logoImg');
+    if(!img) return;
+
+    img.addEventListener('error', async ()=>{
+      try{
+        const r = await window.api?.getAssetUrl?.('icon.png');
+        if(r?.success && r.url){
+          img.src = r.url;
+        }
+      }catch{}
+    }, { once:true });
+
+    const r = await window.api?.getAssetUrl?.('icon.png');
+    if(r?.success && r.url){
+      img.src = r.url;
+    }
+  }catch(e){
+    console.warn('Header logo load failed', e);
+  }
+})();
+
     setupSyncLogUI();
     setupClientCountListener();
     refreshClientCount();

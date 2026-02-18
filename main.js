@@ -26,6 +26,37 @@ autoUpdater.autoDownload = true;
 const path = require('path');
 const fs = require('fs');
 
+
+
+const { pathToFileURL } = require('url');
+// ---- Packaged-safe asset URL helper (for renderer <img src>) ----
+function assetFilePath(filename){
+  const name = String(filename || '').replace(/[^a-zA-Z0-9._-]/g, '');
+  if(!name) return null;
+
+  // In packaged builds, extraResources places assets in: process.resourcesPath/assets/
+  if (app.isPackaged){
+    return path.join(process.resourcesPath, 'assets', name);
+  }
+
+  // In dev, fall back to project-relative paths
+  // Prefer build/icon.png (your current dev header icon path)
+  return path.join(__dirname, 'build', name);
+}
+
+safeRemoveHandler('get-asset-url');
+ipcMain.handle('get-asset-url', async (_e, filename) => {
+  try{
+    const p = assetFilePath(filename);
+    if(!p) return { success:false, error:'Invalid filename' };
+    if(!fs.existsSync(p)) return { success:false, error:`Asset not found: ${p}` };
+    const url = pathToFileURL(p).toString();
+    return { success:true, url, path: p };
+  }catch(e){
+    return { success:false, error:String(e?.message || e) };
+  }
+});
+
 const http = require('http');
 const { URL } = require('url');
 let lanServer = null;
