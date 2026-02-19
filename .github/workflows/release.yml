@@ -1,46 +1,101 @@
-name: Build & Publish (macOS + Windows)
+# EMTAC GitHub Actions workflow
+# Goal: Build + publish Windows installer (.exe) and update metadata (latest.yml) to a GitHub Release.
+#
+# Works best with electron-builder + electron-updater.
+#
+# Key points:
+# - Uses a *real git tag* (preferably vX.Y.Z). In workflow_dispatch we normalize the tag.
+# - Runs electron-builder with --publish always so it uploads assets to the matching GitHub Release.
+# - Ensures permissions allow uploading release assets (contents: write).
+#
+# Notes:
+# - For auto-update on Windows you generally want NSIS target so you get an installer .exe + latest.yml (+ .blockmap).
+# - electron-builder’s default GitHub releaseType is "draft" unless configured; for auto-update you typically want a published release.
+#   See the response instructions for setting build.publish.releaseType = "release" in your electron-builder config.
+
+name: Release - Windows (exe + latest.yml)
 
 on:
-  # Run when a GitHub Release is created or published (electron-builder sometimes creates releases as drafts/created first)
-  release:
-    types: [created, published]
-  # Allow manual runs with an optional tag input (so you can target an existing release like v1.1.18)
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build/publish to (example: v1.1.18). Leave blank to use the selected branch.'
-        required: false
-        default: ''
+        description: "Release tag (e.g. v1.1.18 or 1.1.18)"
+        required: true
+        default: "v1.1.18"
 
 permissions:
   contents: write
 
+concurrency:
+  # Prevent two releases from racing for the same tag
+  group: release-${{ github.workflow }}-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
+  windows:
+    # Avoid a duplicate run if this workflow itself created/pushed the tag
+    if: ${{ github.event_name != 'push' || github.actor != 'github-actions[bot]' }}
+    runs-on: windows-latest
 
     steps:
-      - name: Determine ref to build
-        id: ref
-        shell: bash
-        run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            echo "ref=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ github.event.release.tag_name }}" ]; then
-            echo "ref=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout (tag/branch)
+      - name: Checkout repository (full history + tags)
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.ref.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Normalize tag
+        id: normalize
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG_INPUT="${{ inputs.tag }}"
+          else
+            TAG_INPUT="${{ github.ref_name }}"
+          fi
+
+          # Ensure tag starts with 'v'
+          if [[ "$TAG_INPUT" != v* ]]; then
+            TAG="v$TAG_INPUT"
+          else
+            TAG="$TAG_INPUT"
+          fi
+
+          echo "Using tag: $TAG"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Fetch tags (safety)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+      - name: Ensure tag exists (workflow_dispatch only)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Configure git identity for annotated tags (safe even if not used)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git show-ref --tags --verify --quiet "refs/tags/${TAG}"; then
+            echo "Tag ${TAG} already exists."
+          else
+            echo "Tag ${TAG} does not exist. Creating it at current HEAD: $(git rev-parse HEAD)"
+            git tag -a "${TAG}" -m "${TAG}"
+            git push origin "${TAG}"
+          fi
+
+      - name: Checkout the tag commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout "${TAG}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -51,24 +106,53 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Show build version (sanity check)
+      - name: Verify package.json version matches tag
         shell: bash
         run: |
-          node -p "require('./package.json').version"
-          echo "Building ref: ${{ steps.ref.outputs.ref }}"
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${TAG#v}"
+          echo "package.json version: $PKG_VERSION"
+          echo "tag version: $TAG_VERSION"
+          if [[ "$PKG_VERSION" != "$TAG_VERSION" ]]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match tag ($TAG_VERSION)."
+            echo "Fix by updating package.json (and any build metadata) so the app version equals the release tag."
+            exit 1
+          fi
 
-      # Publish artifacts into the GitHub Release.
-      # We use publish:* (NOT release:*) so CI does not bump versions.
-      - name: Publish (macOS)
-        if: matrix.os == 'macos-latest'
+      - name: Build (if your project defines it)
+        run: npm run build --if-present
+
+      - name: Package + Publish (electron-builder)
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run publish:mac
+        run: |
+          set -euo pipefail
 
-      - name: Publish (Windows)
-        if: matrix.os == 'windows-latest'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run publish:win
+          # When running via workflow_dispatch, GitHub's default GITHUB_REF is a branch,
+          # but electron-builder uses tag detection to decide how/where to publish.
+          # Force a tag-like ref for this process so artifacts upload to the correct release.
+          export GITHUB_REF="refs/tags/${TAG}"
+          export GITHUB_REF_NAME="${TAG}"
+
+          # Build NSIS installer for x64 Windows and publish to GitHub Releases
+          npx electron-builder --win nsis --x64 --publish always
+
+      - name: Debug - list update & installer artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Looking for Windows installer + update metadata (latest.yml) in the workspace..."
+          find . -maxdepth 5 -type f \( -name "latest.yml" -o -name "*.exe" -o -name "*.blockmap" \) -print || true
+
+      - name: Upload build artifacts to workflow run (optional safety net)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: |
+            **/latest.yml
+            **/*.exe
+            **/*.blockmap
+          if-no-files-found: warn
