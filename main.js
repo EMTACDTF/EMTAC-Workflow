@@ -290,11 +290,17 @@ function _lanTryServeStatic(req, res, pathname){
   if(rel.includes('..')) return false;
 
   const root = _lanWebRoot();
-  const abs = path.join(root, rel);
+  let abs = path.join(root, rel);
 
-  // Must exist and be a file
+  // In packaged builds, some assets (like icon.png) live in process.resourcesPath/assets/
+  // while the UI is served from the app path (asar). Provide a fallback for common assets.
   try{
-    if(!fs.existsSync(abs)) return false;
+    if(!fs.existsSync(abs)){
+      const base = path.basename(rel);
+      const alt = assetFilePath(base); // uses resources/assets in packaged, build/ in dev
+      if(alt && fs.existsSync(alt)) abs = alt;
+      else return false;
+    }
     const st = fs.statSync(abs);
     if(!st.isFile()) return false;
   }catch{
