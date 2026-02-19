@@ -177,7 +177,7 @@ function json(res, code, obj){
     'Content-Length': Buffer.byteLength(body),
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
   });
   res.end(body);
 }
@@ -231,6 +231,81 @@ function emitLanClientsIfNeeded(force=false){
   }catch{}
 }
 
+
+// ---------------------------
+// LAN Web UI (serve index.html + assets on the same 3030 server)
+// This lets tablets open: http://<mac-ip>:3030/  (no separate 5173 http-server needed)
+// ---------------------------
+function _lanContentType(filePath){
+  const ext = path.extname(filePath).toLowerCase();
+  if(ext === '.html') return 'text/html; charset=utf-8';
+  if(ext === '.js')   return 'application/javascript; charset=utf-8';
+  if(ext === '.css')  return 'text/css; charset=utf-8';
+  if(ext === '.png')  return 'image/png';
+  if(ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if(ext === '.svg')  return 'image/svg+xml; charset=utf-8';
+  if(ext === '.json') return 'application/json; charset=utf-8';
+  if(ext === '.ico')  return 'image/x-icon';
+  return 'application/octet-stream';
+}
+
+function _lanWebRoot(){
+  // Works for both dev (electron .) and packaged (asar)
+  try{
+    if (app && typeof app.getAppPath === 'function'){
+      return app.getAppPath();
+    }
+  }catch{}
+  // fallback
+  return process.cwd();
+}
+
+function _lanServeFile(res, absPath){
+  try{
+    const data = fs.readFileSync(absPath);
+    res.writeHead(200, {
+      'Content-Type': _lanContentType(absPath),
+      'Content-Length': data.length,
+      // Keep tablet refresh simple while iterating
+      'Cache-Control': 'no-store',
+      // Allow tablet browser to fetch API from same host
+      'Access-Control-Allow-Origin': '*'
+    });
+    return res.end(data);
+  }catch(e){
+    // Fall through to caller
+    return false;
+  }
+}
+
+function _lanTryServeStatic(req, res, pathname){
+  // Only for GET/HEAD
+  if(req.method !== 'GET' && req.method !== 'HEAD') return false;
+
+  // Map "/" -> "/index.html"
+  let rel = pathname === '/' ? '/index.html' : pathname;
+
+  // Disallow path traversal
+  rel = rel.replace(/\\/g,'/');
+  if(rel.includes('..')) return false;
+
+  const root = _lanWebRoot();
+  const abs = path.join(root, rel);
+
+  // Must exist and be a file
+  try{
+    if(!fs.existsSync(abs)) return false;
+    const st = fs.statSync(abs);
+    if(!st.isFile()) return false;
+  }catch{
+    return false;
+  }
+
+  // Serve it
+  const ok = _lanServeFile(res, abs);
+  return !!ok;
+}
+
 function startLanServer(getMainWindow){
   // Only Mac acts as master
   if (process.platform !== 'darwin') return null;
@@ -254,12 +329,16 @@ if(needsAuth && !isAuthorizedLanRequest(req)){
         res.writeHead(204, {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type'
+          'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
         });
         return res.end();
       }
 
       const u = new URL(req.url, `http://${req.headers.host}`);
+
+      // Serve the tablet/web UI directly from this server (no separate 5173 server)
+      if(_lanTryServeStatic(req, res, u.pathname)) return;
+
 
       if(req.method === 'GET' && u.pathname === '/health'){
         const v = app.getVersion();
