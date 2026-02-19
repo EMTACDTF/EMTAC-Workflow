@@ -327,40 +327,17 @@ if (filePath){
               };
               const ct = types[ext] || 'application/octet-stream';
               const stat = fs.statSync(filePath);
-              // NOTE: we set no-store on HTML/JS/CSS to avoid tablet caching issues after reboot
-        if (pth === '/tablet.html' && filePath) {
-          try {
-            const raw = fs.readFileSync(filePath, 'utf8');
-            const bust = String(Date.now());
-            // cache-bust shim + icons so home-screen shortcut won't get stuck on old assets
-            const injected = raw
-              .replace(/\/tablet-shim\.js(?:\?v=\d+)?/g, `/tablet-shim.js?v=${bust}`)
-              .replace(/\/build\/icon\.png(?:\?v=[^"']+)?/g, `/build/icon.png?v=${bust}`)
-              .replace(/\/manifest\.webmanifest(?:\?v=[^"']+)?/g, `/manifest.webmanifest?v=${bust}`)
-              .replace(/\/favicon\.ico(?:\?v=[^"']+)?/g, `/favicon.ico?v=${bust}`);
-            res.writeHead(200, {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store',
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-              'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-            });
-            res.end(injected);
-            return;
-          } catch (e) {
-            // fall through to normal static serving
-          }
-        }
-
-        res.writeHead(200, {
-          'Content-Type': ct,
-          'Cache-Control': (ct.startsWith('text/html') || ct.includes('javascript') || ct.includes('css')) ? 'no-store' : 'no-store',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-        });
-        fs.createReadStream(filePath).pipe(res);
-        return;
+              res.writeHead(200, {
+                'Content-Type': ct,
+                'Content-Length': stat.size,
+                'Cache-Control': 'no-store',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+              });
+              if (method === 'HEAD') return res.end();
+              fs.createReadStream(filePath).pipe(res);
+              return;
             }
           }catch(e){
             return json(res, 500, { ok:false, error: String(e?.message || e) });

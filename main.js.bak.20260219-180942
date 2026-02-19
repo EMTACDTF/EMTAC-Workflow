@@ -241,6 +241,60 @@ function startLanServer(getMainWindow){
 // Auth: if a LAN key is configured, require it for jobs endpoints
 const urlObj = new URL(req.url, 'http://localhost');
 const pathname = urlObj.pathname || '';
+
+    // ---- Tablet / Web UI static files (served from 3030 so no separate terminal server needed) ----
+    const UI_PATHS = new Set([
+      '/tablet.html',
+      '/tablet-shim.js',
+      '/manifest.webmanifest',
+      '/favicon.ico'
+    ]);
+
+    function uiContentType(fp){
+      const ext = path.extname(fp).toLowerCase();
+      if(ext === '.html') return 'text/html; charset=utf-8';
+      if(ext === '.js') return 'application/javascript; charset=utf-8';
+      if(ext === '.css') return 'text/css; charset=utf-8';
+      if(ext === '.json' || ext === '.webmanifest') return 'application/manifest+json; charset=utf-8';
+      if(ext === '.png') return 'image/png';
+      if(ext === '.ico') return 'image/x-icon';
+      if(ext === '.svg') return 'image/svg+xml';
+      return 'application/octet-stream';
+    }
+
+    function serveUiFile(res, urlPath){
+  
+    // Serve tablet UI + icons directly from this 3030 server
+    if (req.method === 'GET'){
+      if (UI_PATHS.has(pathname) || pathname.startsWith('/build/')){
+        if (serveUiFile(res, pathname)) return;
+      }
+    }
+
+    try{
+        const rootDir = app.getAppPath(); // works in dev + packaged (asar)
+        const rel = String(urlPath || '').replace(/^\//,'');
+        const candidate = path.normalize(path.join(rootDir, rel));
+        if(!candidate.startsWith(path.normalize(rootDir))) return false;
+
+        if(!fs.existsSync(candidate)) return false;
+
+        const buf = fs.readFileSync(candidate);
+        res.writeHead(200, {
+          'Content-Type': uiContentType(candidate),
+          'Cache-Control': 'no-store',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+        });
+        res.end(buf);
+        return true;
+      }catch(e){
+        try{ console.warn('[LAN] serveUiFile error', e); }catch{}
+        return false;
+      }
+    }
+
 const needsAuth = pathname.startsWith('/jobs') || pathname.startsWith('/db');
 if(needsAuth && !isAuthorizedLanRequest(req)){
   res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -260,114 +314,6 @@ if(needsAuth && !isAuthorizedLanRequest(req)){
       }
 
       const u = new URL(req.url, `http://${req.headers.host}`);
-
-      // ---- Static UI for tablet/PWA (served from same 3030 LAN server) ----
-      // This removes any dependency on a separate :5173 server.
-      // Allows: /tablet.html, /tablet-shim.js, /manifest.webmanifest, /favicon.ico, and /build/* assets.
-      const method = (req.method || 'GET').toUpperCase();
-      if (method === 'GET' || method === 'HEAD'){
-        const pth = u.pathname || '/';
-        
-// Resolve assets from multiple bases (dev + packaged/asars)
-const appPath = app.getAppPath(); // dev: project dir, packaged: app.asar path
-const bases = [
-  appPath,
-  __dirname,
-  process.cwd?.() || appPath,
-  // packaged fallbacks
-  (process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked') : null),
-  (process.resourcesPath ? path.join(process.resourcesPath, 'app.asar') : null),
-  (process.resourcesPath ? process.resourcesPath : null)
-].filter(Boolean);
-
-const safeJoin = (base, reqPath) => {
-  const rel = String(reqPath).replace(/^\/+/, ''); // remove leading /
-  const full = path.join(base, rel);
-  // prevent path traversal
-  const normBase = path.resolve(base);
-  const normFull = path.resolve(full);
-  if (!normFull.startsWith(normBase + path.sep) && normFull !== normBase) return null;
-  return full;
-};
-
-const pickExistingFile = (reqPath) => {
-  for (const b of bases){
-    const fp = safeJoin(b, reqPath);
-    if (!fp) continue;
-    try{
-      if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return fp;
-    }catch{}
-  }
-  return null;
-};
-
-let filePath = null;
-if (pth === '/' || pth === '/index.html') filePath = pickExistingFile('index.html');
-else if (pth === '/tablet.html') filePath = pickExistingFile('tablet.html');
-else if (pth === '/tablet-shim.js') filePath = pickExistingFile('tablet-shim.js');
-else if (pth === '/manifest.webmanifest') filePath = pickExistingFile('manifest.webmanifest');
-else if (pth === '/favicon.ico') filePath = pickExistingFile('favicon.ico');
-else if (pth.startsWith('/build/')) filePath = pickExistingFile(pth);
-
-if (filePath){
-          try{
-            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()){
-              const ext = path.extname(filePath).toLowerCase();
-              const types = {
-                '.html': 'text/html; charset=utf-8',
-                '.js': 'application/javascript; charset=utf-8',
-                '.css': 'text/css; charset=utf-8',
-                '.json': 'application/json; charset=utf-8',
-                '.webmanifest': 'application/manifest+json; charset=utf-8',
-                '.png': 'image/png',
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.svg': 'image/svg+xml',
-                '.ico': 'image/x-icon'
-              };
-              const ct = types[ext] || 'application/octet-stream';
-              const stat = fs.statSync(filePath);
-              // NOTE: we set no-store on HTML/JS/CSS to avoid tablet caching issues after reboot
-        if (pth === '/tablet.html' && filePath) {
-          try {
-            const raw = fs.readFileSync(filePath, 'utf8');
-            const bust = String(Date.now());
-            // cache-bust shim + icons so home-screen shortcut won't get stuck on old assets
-            const injected = raw
-              .replace(/\/tablet-shim\.js(?:\?v=\d+)?/g, `/tablet-shim.js?v=${bust}`)
-              .replace(/\/build\/icon\.png(?:\?v=[^"']+)?/g, `/build/icon.png?v=${bust}`)
-              .replace(/\/manifest\.webmanifest(?:\?v=[^"']+)?/g, `/manifest.webmanifest?v=${bust}`)
-              .replace(/\/favicon\.ico(?:\?v=[^"']+)?/g, `/favicon.ico?v=${bust}`);
-            res.writeHead(200, {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store',
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-              'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-            });
-            res.end(injected);
-            return;
-          } catch (e) {
-            // fall through to normal static serving
-          }
-        }
-
-        res.writeHead(200, {
-          'Content-Type': ct,
-          'Cache-Control': (ct.startsWith('text/html') || ct.includes('javascript') || ct.includes('css')) ? 'no-store' : 'no-store',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-        });
-        fs.createReadStream(filePath).pipe(res);
-        return;
-            }
-          }catch(e){
-            return json(res, 500, { ok:false, error: String(e?.message || e) });
-          }
-        }
-      }
-
 
       if(req.method === 'GET' && u.pathname === '/health'){
         const v = app.getVersion();

@@ -267,49 +267,26 @@ if(needsAuth && !isAuthorizedLanRequest(req)){
       const method = (req.method || 'GET').toUpperCase();
       if (method === 'GET' || method === 'HEAD'){
         const pth = u.pathname || '/';
-        
-// Resolve assets from multiple bases (dev + packaged/asars)
-const appPath = app.getAppPath(); // dev: project dir, packaged: app.asar path
-const bases = [
-  appPath,
-  __dirname,
-  process.cwd?.() || appPath,
-  // packaged fallbacks
-  (process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked') : null),
-  (process.resourcesPath ? path.join(process.resourcesPath, 'app.asar') : null),
-  (process.resourcesPath ? process.resourcesPath : null)
-].filter(Boolean);
+        const appPath = app.getAppPath(); // works in dev and packaged (asar)
+        const safeJoin = (base, reqPath) => {
+          const rel = String(reqPath).replace(/^\/+/, ''); // remove leading /
+          const full = path.join(base, rel);
+          // prevent path traversal
+          const normBase = path.resolve(base);
+          const normFull = path.resolve(full);
+          if (!normFull.startsWith(normBase + path.sep) && normFull !== normBase) return null;
+          return full;
+        };
 
-const safeJoin = (base, reqPath) => {
-  const rel = String(reqPath).replace(/^\/+/, ''); // remove leading /
-  const full = path.join(base, rel);
-  // prevent path traversal
-  const normBase = path.resolve(base);
-  const normFull = path.resolve(full);
-  if (!normFull.startsWith(normBase + path.sep) && normFull !== normBase) return null;
-  return full;
-};
+        let filePath = null;
+        if (pth === '/' || pth === '/index.html') filePath = safeJoin(appPath, 'index.html');
+        else if (pth === '/tablet.html') filePath = safeJoin(appPath, 'tablet.html');
+        else if (pth === '/tablet-shim.js') filePath = safeJoin(appPath, 'tablet-shim.js');
+        else if (pth === '/manifest.webmanifest') filePath = safeJoin(appPath, 'manifest.webmanifest');
+        else if (pth === '/favicon.ico') filePath = safeJoin(appPath, 'favicon.ico');
+        else if (pth.startsWith('/build/')) filePath = safeJoin(appPath, pth);
 
-const pickExistingFile = (reqPath) => {
-  for (const b of bases){
-    const fp = safeJoin(b, reqPath);
-    if (!fp) continue;
-    try{
-      if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return fp;
-    }catch{}
-  }
-  return null;
-};
-
-let filePath = null;
-if (pth === '/' || pth === '/index.html') filePath = pickExistingFile('index.html');
-else if (pth === '/tablet.html') filePath = pickExistingFile('tablet.html');
-else if (pth === '/tablet-shim.js') filePath = pickExistingFile('tablet-shim.js');
-else if (pth === '/manifest.webmanifest') filePath = pickExistingFile('manifest.webmanifest');
-else if (pth === '/favicon.ico') filePath = pickExistingFile('favicon.ico');
-else if (pth.startsWith('/build/')) filePath = pickExistingFile(pth);
-
-if (filePath){
+        if (filePath){
           try{
             if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()){
               const ext = path.extname(filePath).toLowerCase();
@@ -327,40 +304,17 @@ if (filePath){
               };
               const ct = types[ext] || 'application/octet-stream';
               const stat = fs.statSync(filePath);
-              // NOTE: we set no-store on HTML/JS/CSS to avoid tablet caching issues after reboot
-        if (pth === '/tablet.html' && filePath) {
-          try {
-            const raw = fs.readFileSync(filePath, 'utf8');
-            const bust = String(Date.now());
-            // cache-bust shim + icons so home-screen shortcut won't get stuck on old assets
-            const injected = raw
-              .replace(/\/tablet-shim\.js(?:\?v=\d+)?/g, `/tablet-shim.js?v=${bust}`)
-              .replace(/\/build\/icon\.png(?:\?v=[^"']+)?/g, `/build/icon.png?v=${bust}`)
-              .replace(/\/manifest\.webmanifest(?:\?v=[^"']+)?/g, `/manifest.webmanifest?v=${bust}`)
-              .replace(/\/favicon\.ico(?:\?v=[^"']+)?/g, `/favicon.ico?v=${bust}`);
-            res.writeHead(200, {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store',
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-              'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-            });
-            res.end(injected);
-            return;
-          } catch (e) {
-            // fall through to normal static serving
-          }
-        }
-
-        res.writeHead(200, {
-          'Content-Type': ct,
-          'Cache-Control': (ct.startsWith('text/html') || ct.includes('javascript') || ct.includes('css')) ? 'no-store' : 'no-store',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-        });
-        fs.createReadStream(filePath).pipe(res);
-        return;
+              res.writeHead(200, {
+                'Content-Type': ct,
+                'Content-Length': stat.size,
+                'Cache-Control': 'no-store',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+              });
+              if (method === 'HEAD') return res.end();
+              fs.createReadStream(filePath).pipe(res);
+              return;
             }
           }catch(e){
             return json(res, 500, { ok:false, error: String(e?.message || e) });
