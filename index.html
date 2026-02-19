@@ -1,7 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
+  <script src="tablet-shim.js"></script>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="./tablet-shim.js"></script>
+<meta charset="utf-8" />
   <title>EMTAC WORKFLOW</title>
   <style>
     :root{
@@ -1234,18 +1238,8 @@ body.dark .syncLogList{
       const next = cur === 'dark' ? 'light' : 'dark';
       localStorage.setItem('emtac_theme', next);
       applyThemeFromStorage();
-    (async ()=>{
-      try{
-        if (!window.api) return showStatus('API Missing', 'preload bridge failed', 'window.api is undefined');
-        const p = await window.api.ping();
-        if (!p?.ok) return showStatus('IPC Error', '', 'ping failed');
-      }catch(err){
-        showStatus('IPC Error', '', String(err?.message || err));
-      }
-    })();
     }
-
-    function toggleForm(){
+function toggleForm(){
       const el = document.getElementById('formPanel');
       const isHidden = el.style.display === 'none';
       el.style.display = isHidden ? 'block' : 'none';
@@ -3019,6 +3013,10 @@ function openSettings(){
 
     // ---- Load jobs ----
     async function loadJobs(){
+      if (!window.api || typeof window.api.getJobs !== 'function'){
+        showStatus('API Missing', 'Tablet/Web mode', 'window.api.getJobs is not available. Ensure tablet-shim.js is loaded.');
+        return;
+      }
       const jobsRaw = await window.api.getJobs();
       jobsCache = jobsRaw.map(j=>ensureJob(j));
       renderAll();
@@ -3070,7 +3068,7 @@ function openSettings(){
     addSyncLog('info','SYNC','Init');
     loadSettingsIntoUI();
     startAutoReconnect();
-    loadJobs();
+    loadJobs().catch(e=>{ try{ showStatus('Load Jobs Error','', String(e?.message||e)); }catch{} });
     // Default to Customer view on startup
     customerMode = true;
     document.getElementById('btnCustomer')?.classList.add('active');
