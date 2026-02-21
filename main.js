@@ -236,11 +236,236 @@ function startLanServer(getMainWindow){
   if (process.platform !== 'darwin') return null;
 
   const server = http.createServer(async (req, res) => {
+
+    // ---- EMTAC_TABLET_LAUNCH_SERVE_V2 ----
+    try {
+      const u0 = (req.url || '/').split('?')[0];
+      if (u0 === '/tablet-launch.html') {
+        const fp2 = _path2.join(__dirname, 'tablet-launch.html');
+        if (_fs2.existsSync(fp2)) {
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+          });
+          _fs2.createReadStream(fp2).pipe(res);
+          return;
+        }
+      }
+    } catch (e) { /* fall through */ }
+    // ---- /EMTAC_TABLET_LAUNCH_SERVE_V2 ----
+
+
+    // ---- EMTAC_STATIC_BUILD_SERVE_FINAL ----
+    try {
+      const _fs = require('fs');
+      const _path = require('path');
+      const u = (req.url || '').split('?')[0] || '';
+      if (u.startsWith('/build/')) {
+        const rel = u.replace(/^\/build\//, '');
+        if (rel.includes('..')) { /* block traversal */ }
+        else {
+          const fp = _path.join(__dirname, 'build', rel);
+          if (_fs.existsSync(fp) && _fs.statSync(fp).isFile()) {
+            const ext = _path.extname(fp).toLowerCase();
+            const ct = (
+              ext == '.png'  ? 'image/png' :
+              ext == '.jpg' || ext == '.jpeg' ? 'image/jpeg' :
+              ext == '.svg'  ? 'image/svg+xml' :
+              ext == '.ico'  ? 'image/x-icon' :
+              ext == '.webp' ? 'image/webp' :
+              'application/octet-stream'
+            );
+            res.writeHead(200, {
+              'Content-Type': ct,
+              'Cache-Control': 'no-store',
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+            });
+            _fs.createReadStream(fp).pipe(res);
+            return;
+          }
+        }
+      }
+    } catch (e) { /* fall through */ }
+    // ---- /EMTAC_STATIC_BUILD_SERVE_FINAL ----
+    // ---- EMTAC_TABLET_HTML_SERVE_FINAL ----
+    try {
+      const _fs2 = require('fs');
+      const _path2 = require('path');
+      const u2 = (req.url || '').split('?')[0] || '';
+      if (u2 === '/tablet.html') {
+        const fp2 = _path2.join(__dirname, 'tablet.html');
+        if (_fs2.existsSync(fp2)) {
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+          });
+          _fs2.createReadStream(fp2).pipe(res);
+          return;
+        }
+      }
+    } catch (e) { /* fall through */ }
+    // ---- /EMTAC_TABLET_HTML_SERVE_FINAL ----
+
+
+// ---- EMTAC_STATIC_BUILD_SERVE_V2 ----
+// Serve static build assets (icons etc) directly from disk for tablet UI on :3030.
+// This MUST run before any route matching that returns JSON 404.
+try{
+  const u = new URL(req.url, 'http://localhost');
+  if(req.method === 'GET' && u.pathname.startsWith('/build/')){
+    const rel = u.pathname.replace(/^\/build\//,'').replace(/\.\./g,'');
+    const fp = path.join(__dirname, 'build', rel);
+    if(fs.existsSync(fp) && fs.statSync(fp).isFile()){
+      const ext = (path.extname(fp)||'').toLowerCase();
+      const ct =
+        ext=='.png' ? 'image/png' :
+        (ext=='.jpg' || ext=='.jpeg') ? 'image/jpeg' :
+        ext=='.svg' ? 'image/svg+xml' :
+        ext=='.ico' ? 'image/x-icon' :
+        'application/octet-stream';
+      res.writeHead(200, {
+        'Content-Type': ct,
+        'Cache-Control': 'no-store',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY',
+      });
+      fs.createReadStream(fp).pipe(res);
+      return;
+    }
+  }
+}catch(_e){}
+// ---- /EMTAC_STATIC_BUILD_SERVE_V2 ----
+
+
     touchLanClient(req);
 
 // Auth: if a LAN key is configured, require it for jobs endpoints
 const urlObj = new URL(req.url, 'http://localhost');
 const pathname = urlObj.pathname || '';
+
+  // --- EMTAC_TABLET_STATIC_SERVE_V3 ---
+  // Serve tablet UI + shim + icons directly from this :3030 server (dev + packaged).
+  // This runs BEFORE auth/API routing so tablet assets never return JSON 404.
+  try{
+    const fs = require('fs');
+    const path = require('path');
+    const { app: electronApp } = require('electron');
+
+    const APPROOT = (electronApp && typeof electronApp.getAppPath === 'function')
+      ? electronApp.getAppPath()
+      : process.cwd();
+
+    function sendStatic(res, absPath, contentType){
+      try{
+        if(!fs.existsSync(absPath)) return false;
+        const buf = fs.readFileSync(absPath);
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-store',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+        });
+        res.end(buf);
+        return true;
+      }catch(e){
+        try{
+          res.writeHead(500, { 'Content-Type':'application/json', 'Access-Control-Allow-Origin':'*' });
+          res.end(JSON.stringify({ ok:false, error:String((e && e.message) || e) }));
+        }catch{}
+        return true; // handled
+      }
+    }
+
+    function send204(res){
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+      });
+      res.end();
+    }
+
+    // Preflight support
+    if(req.method === 'OPTIONS' && (
+      pathname === '/tablet.html' ||
+      pathname === '/tablet-shim.js' ||
+      pathname === '/build/icon.png' ||
+      pathname === '/manifest.webmanifest' ||
+      pathname === '/favicon.ico' ||
+      pathname === '/build/pwa/icon-192.png' ||
+      pathname === '/build/pwa/icon-512.png'
+    )){
+      send204(res); return;
+    }
+
+    // Serve tablet.html + shim
+    if(req.method === 'GET' && pathname === '/tablet.html'){
+      if(sendStatic(res, path.join(APPROOT, 'tablet.html'), 'text/html; charset=utf-8')) return;
+    }
+
+    // EMTAC_PWA_CANONICAL_ROUTES_V2
+    if(req.method === 'GET' && pathname === '/tablet-launch.html'){
+      if(sendStatic(res, path.join(APPROOT, 'tablet-launch.html'), 'text/html; charset=utf-8')) return;
+    }
+    if(req.method === 'GET' && pathname === '/manifest.webmanifest'){
+      if(sendStatic(res, path.join(APPROOT, 'manifest.webmanifest'), 'application/manifest+json; charset=utf-8')) return;
+    }
+
+
+    // EMTAC_LAUNCH_SERVE_LAN_V1
+    
+    // EMTAC_MANIFEST_SERVE_LAN_V1
+    
+
+    // EMTAC_TABLET_LAUNCH_STATIC_LAN_V1
+    
+    // EMTAC_TABLET_LAUNCH_STATIC_V1
+
+    
+    // EMTAC_TABLET_LAUNCH_REDIRECT_LIVE
+
+    
+    // EMTAC_TABLET_LAUNCH_REDIRECT_V2
+    
+
+    // EMTAC_TABLET_LAUNCH_REDIRECT_FINAL
+    
+if(req.method === 'GET' && pathname === '/tablet-shim.js'){
+      if(sendStatic(res, path.join(APPROOT, 'tablet-shim.js'), 'application/javascript; charset=utf-8')) return;
+    }
+    /* EMTAC_TABLET_LAUNCH_ROUTE_V1 */
+
+
+    // Serve icons/PWA assets (most important for Android shortcut icon + in-app header icon)
+    
+    // EMTAC_MANIFEST_SERVE_V1
+    
+if(req.method === 'GET' && pathname === '/build/icon.png'){
+      if(sendStatic(res, path.join(APPROOT, 'build', 'icon.png'), 'image/png')) return;
+    }
+    if(req.method === 'GET' && pathname === '/build/pwa/icon-192.png'){
+      if(sendStatic(res, path.join(APPROOT, 'build', 'pwa', 'icon-192.png'), 'image/png')) return;
+    }
+    if(req.method === 'GET' && pathname === '/build/pwa/icon-512.png'){
+      if(sendStatic(res, path.join(APPROOT, 'build', 'pwa', 'icon-512.png'), 'image/png')) return;
+    }
+    if(req.method === 'GET' && pathname === '/favicon.ico'){
+      // Some builds won't have this; we simply let it fall through if missing.
+      if(sendStatic(res, path.join(APPROOT, 'favicon.ico'), 'image/x-icon')) return;
+      if(sendStatic(res, path.join(APPROOT, 'build', 'icon.png'), 'image/png')) return;
+    }
+    }catch(e){
+    // Never block API if static helper fails
+  }
+  // --- END EMTAC_TABLET_STATIC_SERVE_V3 ---
+
+
 const needsAuth = pathname.startsWith('/jobs') || pathname.startsWith('/db');
 if(needsAuth && !isAuthorizedLanRequest(req)){
   res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -261,120 +486,66 @@ if(needsAuth && !isAuthorizedLanRequest(req)){
 
       const u = new URL(req.url, `http://${req.headers.host}`);
 
-      // ---- Static UI for tablet/PWA (served from same 3030 LAN server) ----
-      // This removes any dependency on a separate :5173 server.
-      // Allows: /tablet.html, /tablet-shim.js, /manifest.webmanifest, /favicon.ico, and /build/* assets.
-      const method = (req.method || 'GET').toUpperCase();
-      if (method === 'GET' || method === 'HEAD'){
-        const pth = u.pathname || '/';
-        
-// Resolve assets from multiple bases (dev + packaged/asars)
-const appPath = app.getAppPath(); // dev: project dir, packaged: app.asar path
-const bases = [
-  appPath,
-  __dirname,
-  process.cwd?.() || appPath,
-  // packaged fallbacks
-  (process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked') : null),
-  (process.resourcesPath ? path.join(process.resourcesPath, 'app.asar') : null),
-  (process.resourcesPath ? process.resourcesPath : null)
-].filter(Boolean);
-
-const safeJoin = (base, reqPath) => {
-  const rel = String(reqPath).replace(/^\/+/, ''); // remove leading /
-  const full = path.join(base, rel);
-  // prevent path traversal
-  const normBase = path.resolve(base);
-  const normFull = path.resolve(full);
-  if (!normFull.startsWith(normBase + path.sep) && normFull !== normBase) return null;
-  return full;
-};
-
-const pickExistingFile = (reqPath) => {
-  for (const b of bases){
-    const fp = safeJoin(b, reqPath);
-    if (!fp) continue;
-    try{
-      if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return fp;
-    }catch{}
-  }
-  return null;
-};
-
-let filePath = null;
-if (pth === '/' || pth === '/index.html') filePath = pickExistingFile('index.html');
-else if (pth === '/tablet.html') filePath = pickExistingFile('tablet.html');
-else if (pth === '/tablet-shim.js') filePath = pickExistingFile('tablet-shim.js');
-else if (pth === '/manifest.webmanifest') filePath = pickExistingFile('manifest.webmanifest');
-else if (pth === '/favicon.ico') filePath = pickExistingFile('favicon.ico');
-else if (pth.startsWith('/build/')) filePath = pickExistingFile(pth);
-
-if (filePath){
-          try{
-            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()){
-              const ext = path.extname(filePath).toLowerCase();
-              const types = {
-                '.html': 'text/html; charset=utf-8',
-                '.js': 'application/javascript; charset=utf-8',
-                '.css': 'text/css; charset=utf-8',
-                '.json': 'application/json; charset=utf-8',
-                '.webmanifest': 'application/manifest+json; charset=utf-8',
-                '.png': 'image/png',
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.svg': 'image/svg+xml',
-                '.ico': 'image/x-icon'
-              };
-              const ct = types[ext] || 'application/octet-stream';
-              const stat = fs.statSync(filePath);
-              // NOTE: we set no-store on HTML/JS/CSS to avoid tablet caching issues after reboot
-        if (pth === '/tablet.html' && filePath) {
-          try {
-            const raw = fs.readFileSync(filePath, 'utf8');
-            const bust = String(Date.now());
-            // cache-bust shim + icons so home-screen shortcut won't get stuck on old assets
-            const injected = raw
-              .replace(/\/tablet-shim\.js(?:\?v=\d+)?/g, `/tablet-shim.js?v=${bust}`)
-              .replace(/\/build\/icon\.png(?:\?v=[^"']+)?/g, `/build/icon.png?v=${bust}`)
-              .replace(/\/manifest\.webmanifest(?:\?v=[^"']+)?/g, `/manifest.webmanifest?v=${bust}`)
-              .replace(/\/favicon\.ico(?:\?v=[^"']+)?/g, `/favicon.ico?v=${bust}`);
-            res.writeHead(200, {
-              'Content-Type': 'text/html; charset=utf-8',
-              'Cache-Control': 'no-store',
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-              'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-            });
-            res.end(injected);
-            return;
-          } catch (e) {
-            // fall through to normal static serving
-          }
-        }
-
-        res.writeHead(200, {
-          'Content-Type': ct,
-          'Cache-Control': (ct.startsWith('text/html') || ct.includes('javascript') || ct.includes('css')) ? 'no-store' : 'no-store',
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
-        });
-        fs.createReadStream(filePath).pipe(res);
-        return;
-            }
-          }catch(e){
-            return json(res, 500, { ok:false, error: String(e?.message || e) });
-          }
-        }
-      }
-
-
       if(req.method === 'GET' && u.pathname === '/health'){
         const v = app.getVersion();
         return json(res, 200, { ok:true, role:'master', version:v, port:LAN_PORT, time:new Date().toISOString() });
       }
 
-      if(req.method === 'GET' && u.pathname === '/jobs'){
+      
+      // ---- Tablet/UI assets (public) ----
+      // These routes prevent the Android tablet header icon from 404'ing (which causes flicker/reload loops).
+      const serveFile = (fp, contentType) => {
+        if(!fp) return false;
+        try{
+          if(!fs.existsSync(fp)) return false;
+          res.writeHead(200, {
+            'Content-Type': contentType,
+            'Cache-Control': 'no-store',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-EMTAC-KEY'
+          });
+          fs.createReadStream(fp).pipe(res);
+          return true;
+        }catch(e){
+          return false;
+        }
+      };
+
+      const resolveAsset = (...parts) => {
+        const candidates = [];
+        try{ candidates.push(path.join(app.getAppPath(), ...parts)); }catch{}
+        candidates.push(path.join(__dirname, ...parts));
+        candidates.push(path.join(process.cwd(), ...parts));
+        for(const c of candidates){
+          try{ if(fs.existsSync(c)) return c; }catch{}
+        }
+        return null;
+      };
+
+      if(req.method === 'GET' && (u.pathname === '/build/icon.png' || u.pathname === '/icon.png')){
+        const fp = resolveAsset('build','icon.png');
+        if(serveFile(fp, 'image/png')) return;
+      }
+
+      if(req.method === 'GET' && u.pathname === '/favicon.ico'){
+        const fp = resolveAsset('build','pwa','favicon-32.png') || resolveAsset('build','icon.png');
+        if(serveFile(fp, 'image/png')) return;
+      }
+
+      if(req.method === 'GET' && u.pathname === '/manifest.webmanifest'){
+        const fp = resolveAsset('manifest.webmanifest');
+        if(serveFile(fp, 'application/manifest+json')) return;
+      }
+
+      if(req.method === 'GET' && u.pathname.startsWith('/build/pwa/')){
+        const rel = u.pathname.replace(/^\//,'');
+        const fp = resolveAsset(...rel.split('/'));
+        const ct = rel.endsWith('.png') ? 'image/png' : 'application/octet-stream';
+        if(serveFile(fp, ct)) return;
+      }
+
+if(req.method === 'GET' && u.pathname === '/jobs'){
         const db = loadDb();
         return json(res, 200, { ok:true, jobs: db.jobs || [] });
       }

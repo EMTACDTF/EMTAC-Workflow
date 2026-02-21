@@ -1,99 +1,139 @@
-/* EMTAC Tablet Browser Shim v22 (stable: jobs + icon + server ping) */
-(function () {
-  const host = location.hostname || "192.168.3.149";
-  const API_BASE = `http://${host}:3030`;
-  const KEY_LS = "emtac_lanKey";
+/* EMTAC Tablet/Browser Shim v28 (contract-correct)
+ * Fixes (FACT):
+ * - UI expects window.api.getJobs() -> ARRAY (jobsRaw.map must work)
+ * - UI expects addJob/updateJob/deleteJob to exist + return {success:true,...}
+ * - UI expects pingServer() to return {ok:true, health:{ok:true,...}}
+ * - UI expects getVersion/getAppVersion to return STRING
+ *
+ * Auth: inject lanKey as ?key= and X-EMTAC-KEY header.
+ */
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const LAN_KEY = (qs.get("lanKey") || "").trim();
+  const DEBUG = /^(1|true|yes|on)$/i.test(qs.get("debug") || "");
+  const log = (...a) => { if (DEBUG) console.log("[EMTAC SHIM v28]", ...a); };
 
-  function qsKey() {
-    try {
-      const u = new URL(location.href);
-      return (u.searchParams.get("lanKey") || u.searchParams.get("key") || "").trim();
-    } catch { return ""; }
-  }
+  const origin = location.origin; // e.g. http://192.168.3.149:3030
 
-  function getKey() {
-    const kq = qsKey();
-    if (kq) { try { localStorage.setItem(KEY_LS, kq); } catch {} }
-    try { return (kq || localStorage.getItem(KEY_LS) || "").trim(); }
-    catch { return kq; }
-  }
-
-  function urlWithKey(path) {
-    const key = getKey();
-    const u = new URL(path, API_BASE);
-    if (key) u.searchParams.set("key", key);
+  function withKey(url) {
+    if (!LAN_KEY) return url;
+    const u = new URL(url, origin);
+    if (!u.searchParams.get("key")) u.searchParams.set("key", LAN_KEY);
     return u.toString();
   }
 
-  async function fetchJson(url, opts = {}) {
-    const res = await fetch(url, { cache:"no-store", mode:"cors", credentials:"omit", ...opts });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.error || ("HTTP " + res.status));
-    return data;
+  async function apiFetch(path, opts = {}) {
+    const url = withKey(path);
+    const headers = Object.assign(
+      { "Content-Type": "application/json" },
+      (LAN_KEY ? { "X-EMTAC-KEY": LAN_KEY } : {}),
+      (opts.headers || {})
+    );
+
+    const res = await fetch(url, {
+      method: opts.method || "GET",
+      headers,
+      body: opts.body || undefined,
+    });
+
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    const isJson = ct.includes("application/json") || ct.includes("+json");
+    const body = isJson ? await res.json().catch(() => null) : await res.text().catch(() => "");
+
+    if (!res.ok) {
+      const msg = (body && body.error) ? body.error : (`HTTP ${res.status}`);
+      throw new Error(msg);
+    }
+    return body;
   }
 
   async function health() {
-    return await fetchJson(API_BASE + "/health");
+    // /health does not require key, but sending it doesn't hurt
+    return await apiFetch("/health", { method: "GET" });
   }
 
-  window.api = window.api || {};
-
-  // Keep existing inline ping stub, but make it return real data too
-  const _origPing = window.api.ping;
-  window.api.ping = async () => {
-    try {
+  // ---- THE CONTRACT ----
+  const api = {
+    // Used for “connected” indicator
+    pingServer: async () => {
       const h = await health();
-      return { ok:true, ...h };
-    } catch {
-      return (typeof _origPing === "function") ? await _origPing() : { ok:true };
-    }
-  };
+      return { ok: !!(h && h.ok), health: h };
+    },
 
-  window.api.pingServer = async () => {
-    try {
+    // Some UI code calls ping()
+    ping: async () => ({ ok: true }),
+
+    // Version labels must be STRING
+    getVersion: async () => {
       const h = await health();
-      return { ok:true, success:true, health:h };
-    } catch (e) {
-      return { ok:false, success:false, error:String(e?.message || e) };
-    }
+      return String((h && h.version) || "0.0.0");
+    },
+    getAppVersion: async () => {
+      const h = await health();
+      return String((h && h.version) || "0.0.0");
+    },
+
+    // IMPORTANT: must return ARRAY
+    getJobs: async () => {
+      const resp = await apiFetch("/jobs", { method: "GET" });
+      // server returns {ok:true, jobs:[...]}
+      const arr = resp && Array.isArray(resp.jobs) ? resp.jobs : [];
+      return arr;
+    },
+
+    addJob: async (job) => {
+      const resp = await apiFetch("/jobs", {
+        method: "POST",
+        body: JSON.stringify(job || {}),
+      });
+      // server returns {ok:true, job:{...}}
+      if (resp && resp.ok) return { success: true, job: resp.job };
+      return { success: false, error: (resp && resp.error) ? resp.error : "Add failed" };
+    },
+
+    updateJob: async (id, patch) => {
+      if (!id) return { success: false, error: "Missing id" };
+      const resp = await apiFetch(`/jobs/${encodeURIComponent(String(id))}`, {
+        method: "PUT",
+        body: JSON.stringify({ patch: patch || {} }),
+      });
+      if (resp && resp.ok) return { success: true, job: resp.job };
+      return { success: false, error: (resp && resp.error) ? resp.error : "Update failed" };
+    },
+
+    deleteJob: async (id) => {
+      if (!id) return { success: false, error: "Missing id" };
+      const resp = await apiFetch(`/jobs/${encodeURIComponent(String(id))}`, {
+        method: "DELETE",
+      });
+      if (resp && resp.ok) return { success: true };
+      return { success: false, error: (resp && resp.error) ? resp.error : "Delete failed" };
+    },
+
+    // Optional settings helpers (safe stubs)
+    getSettings: async () => {
+      try { return JSON.parse(localStorage.getItem("emtac_tablet_settings") || "{}"); }
+      catch { return {}; }
+    },
+    saveSettings: async (s) => {
+      try { localStorage.setItem("emtac_tablet_settings", JSON.stringify(s || {})); } catch {}
+      return { ok: true };
+    },
   };
 
-  window.api.getVersion = async () => {
-    const h = await health().catch(() => null);
-    return h?.version ? String(h.version) : "0.0.0";
-  };
-  window.api.getAppVersion = window.api.getVersion;
+  window.api = api;
 
-  window.api.getJobs = async () => {
-    const data = await fetchJson(urlWithKey("/jobs"));
-    return data.jobs || [];
-  };
+  // Prevent blank-screen “Unhandled promise” on Android Chrome
+  window.addEventListener("unhandledrejection", (ev) => {
+    const msg = String((ev && ev.reason && ev.reason.message) || (ev && ev.reason) || ev);
+    log("unhandledrejection:", msg);
+    try { ev.preventDefault(); } catch {}
+  });
 
-  // Optional helpers so UI never complains
-  window.api.getClientCount = async () => ({ success:true, count:1 });
-  window.api.onClientCount = () => {};
-  window.api.onJobsUpdated = () => {};
-  window.api.getAssetUrl = async (name) => ({ success:true, url: new URL(name, location.origin).toString() });
-  window.api.printJobCardToPrinter = async () => ({ success:false, error:"Not supported on tablet" });
+  window.addEventListener("error", (ev) => {
+    const msg = String((ev && ev.message) || ev);
+    log("error:", msg);
+  });
 
-  // Force header icon
-  function forceHeaderIcon() {
-    try {
-      const img =
-        document.getElementById("headerLogo") ||
-        document.querySelector(".logoImg") ||
-        document.querySelector('img[alt*="logo" i]');
-      if (!img) return;
-      const target = "/build/icon.png";
-      img.src = target;
-      img.onerror = () => { img.src = target; };
-    } catch {}
-  }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", forceHeaderIcon, { once:true });
-  } else {
-    forceHeaderIcon();
-  }
-
-  console.info("[tablet] shim v22 ready", { API_BASE, keyPresent: !!getKey() });
+  log("shim ready", "lanKey=" + (LAN_KEY ? "yes" : "no"), "debug=" + (DEBUG ? "on" : "off"));
 })();
